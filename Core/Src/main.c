@@ -320,6 +320,12 @@ static void MX_DAC1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN DAC1_Init 2 */
+  /* Start DAC Channel 2 */
+  if (HAL_DAC_Start(&hdac1, DAC_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* Set DAC output to mid-scale (1.65V with 3.3V VREF) */
   HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 2048);
   /* USER CODE END DAC1_Init 2 */
 
