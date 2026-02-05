@@ -1,3 +1,220 @@
 build
 mx.scratch
 !.settings
+
+# ================================
+# 工程文件与配置
+# ================================
+# 用户工程选项文件（包含本地调试配置，建议忽略）
+*.uvoptx
+# 用户界面布局文件（如窗口位置等，需忽略）
+*.uvguix.*
+# # 工程配置文件（建议提交时酌情考虑）
+# *.uvprojx
+# 备份文件（如工程文件自动备份）
+*.bak
+# 交叉引用文件（编译生成）
+*.crf
+# 依赖文件（编译生成）
+*.d
+# 调试配置文件
+*.scvd
+# Run Time Environment 生成文件
+*.rte
+# Vim 临时文件
+*.swp
+# Vim 临时文件
+*.swo
+
+#================================
+# 编译输出文件
+# ================================
+# 目标文件（编译生成）
+*.o
+# 目标文件（Windows 风格）
+*.obj
+# ELF 格式可执行文件（含调试信息）
+*.axf
+# HEX 烧录文件
+*.hex
+# 二进制镜像文件
+*.bin
+# 内存映射文件（链接生成）
+*.map
+# 汇编列表文件（编译生成）
+*.lst
+# GCC 生成的可执行文件
+*.elf
+# 通用输出文件
+*.out
+# 依赖文件（自动生成）
+*.d
+*.dep
+MDK-ARM/SatWiki_1_OBC
+# ================================
+# 调试与临时文件
+# ================================
+# 调试脚本（可能包含本地硬件配置）
+*.ini
+# 编译日志文件
+*.log
+# 调试信息临时文件
+*.dbg
+# 调试配置数据库
+*.cdb
+# Trace 调试配置文件
+*.tracespec
+# 数据库缓存
+*.db
+# Batch 脚本文件（本地配置） Keil/ARMCC 自动生成的编译批处理脚本
+*.BAT
+
+# ================================
+# IDE 自动生成文件
+# ================================
+# 多项目工作区文件（如有）
+*.uvmpw
+# 旧版本依赖文件
+*.dep
+# 编译过程日志文件
+*.plg
+# J-Link 调试脚本（本地配置）
+*.jlink
+
+# 其他临时文件
+# 编辑器临时文件（如 Keil 自动保存）
+*.~*
+# 临时文件
+*.tmp
+# # 常见构建输出目录
+build/
+/EWARM/**
+**/MDK/output/**
+**/MDK/output/release/**
+/output/
+/Debug/
+/dist/
+
+
+# ================================
+# 通用忽略规则（补充）
+# ================================
+# 用户工具链配置（如 VS Code 等）
+*.user
+# VS Code 配置目录（如使用其他编辑器）
+.vscode/
+# JetBrains IDE 配置目录
+.idea/
+# Eclipse 配置
+/.settings/
+# Eclipse C 项目配置
+/.cproject
+# Eclipse 项目文件
+/.project
+# macOS 系统文件
+.DS_Store
+# Windows 缩略图缓存
+Thumbs.db
+#这是 EIDE (Embedded IDE for VSCode) 自动生成的工程上下文配置文件。
+.eide.usr.ctx.json
+# 这是 Clang 工具链的代码格式化配置文件。
+.clang-format
+# 这是 Windows 自动生成的文件，主要存储文件夹显示属性（比如自定义图标、排序方式）。
+desktop.ini
+
+# ================================
+# IAR Embedded Workbench 工程文件
+# ================================
+# IAR 工具链文件
+/*.ewt
+# IAR 调试配置文件
+/*.ewd
+# IAR 工程文件（建议提交时酌情考虑）
+/*.ewp
+# IAR 工作区文件
+/*.eww
+# IAR 编译输出
+/Obj/
+# IAR 汇编清单
+/Lst/
+# IAR 工程局部设置
+/settings/
+
+# ================================
+# CMSIS Pack / 芯片支持包
+# ================================
+# IDE 自动下载的芯片支持包，无需提交
+/.pack/**
+
+
+# ================================
+# Renesas 瑞萨工程专用忽略规则
+# ================================
+# e² studio (Eclipse-based) IDE 配置（本地环境相关，忽略）
+
+# Eclipse 项目本地设置
+/.settings/
+# Eclipse 工作区元数据
+/.metadata/
+# 启动/调试配置文件（本地生成）
+/*.launch
+# 远程调试临时文件
+/RemoteSystemsTempFiles/
+
+# CS+ (CubeSuite+) IDE 文件（自动生成或本地相关，忽略）
+# 绝对路径文件
+*.abs
+# 编译中间文件
+*.poc
+# 自动生成的 include 文件
+*.inc
+# 工程信息文件（本地环境相关）
+*.ipr
+# 旧备份文件
+*.org
+# 系统文件
+*.sys
+# 构建日志
+*.log
+# Motorola S-Record 固件文件
+*.mot
+# CS+ 自动生成的编译中间文件 / 增量编译缓存
+*.mtud
+
+# Renesas Pack / Device 文件（自动下载，无需提交）
+# MCU Pack 文件
+*.pack
+# 调试配置文件（本地机器相关）
+.rlaunch
+# 系统视图描述文件（自动生成）
+*.scvd
+
+# 临时 / 备份文件
+# 编辑器临时文件
+*~
+# 备份文件
+*.bak
+# Vim 临时文件
+*.swp
+# Vim 临时文件
+*.swo
+# 临时文件
+*.tmp
+# 用户本地配置
+*.user
+# 数据库缓存
+*.db
+
+
+# 操作系统相关
+# macOS Finder 缓存
+.DS_Store
+# Windows 缩略图缓存
+Thumbs.db
+# Windows 文件夹属性
+desktop.ini
+
+# office临时文件
+~$*
+
+RTE/_SatWiki_1_OBC
