@@ -901,7 +901,9 @@ void StartDefaultTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    HAL_GPIO_TogglePin(WDI_GPIO_Port, WDI_Pin);
+    HAL_IWDG_Refresh(&hiwdg1);
+    osDelay(100);
   }
   /* USER CODE END 5 */
 }
