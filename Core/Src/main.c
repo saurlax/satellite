@@ -25,6 +25,9 @@
 /* USER CODE BEGIN Includes */
 #include "aic3104.h"
 #include "adf7021.h"
+#include "ADF4360.h"
+#include "stm32h7xx_hal_gpio.h"
+#include <sys/_intsup.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -137,7 +140,10 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  if (ADF4360_Init(ADF4360_7)) {
+    unsigned long long actual_freq = ADF4360_SetFrequency(436500000ULL);
+    while (HAL_GPIO_ReadPin(TXPLL_LD_GPIO_Port, TXPLL_LD_Pin) == GPIO_PIN_RESET);
+  }
   /* Initialize AIC3104 codec */
   // AIC3104_Config_t aic3104_cfg = {
   //     .hi2c = &hi2c1,
