@@ -1,3 +1,40 @@
 build
 mx.scratch
-!.settings
+
+# Renesas Pack / Device 文件（自动下载，无需提交）
+# MCU Pack 文件
+*.pack
+# 调试配置文件（本地机器相关）
+.rlaunch
+# 系统视图描述文件（自动生成）
+*.scvd
+
+# 临时 / 备份文件
+# 编辑器临时文件
+*~
+# 备份文件
+*.bak
+# Vim 临时文件
+*.swp
+# Vim 临时文件
+*.swo
+# 临时文件
+*.tmp
+# 用户本地配置
+*.user
+# 数据库缓存
+*.db
+
+
+# 操作系统相关
+# macOS Finder 缓存
+.DS_Store
+# Windows 缩略图缓存
+Thumbs.db
+# Windows 文件夹属性
+desktop.ini
+
+# office临时文件
+~$*
+
+RTE/_SatWiki_1_OBC
