@@ -19,12 +19,12 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
-#include "stm32h7xx_hal_dac.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "aic3104.h"
 #include "adf7021.h"
+#include "ADF4360.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -113,7 +113,6 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -137,7 +136,10 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  if (ADF4360_Init(ADF4360_7)) {
+      unsigned long long actual_freq = ADF4360_SetFrequency(436500000ULL);
+      while (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_3) == GPIO_PIN_RESET);
+  }
   /* Initialize AIC3104 codec */
   // AIC3104_Config_t aic3104_cfg = {
   //     .hi2c = &hi2c1,
@@ -154,30 +156,30 @@ int main(void)
   // }
 
   /* Initialize ADF7021 transceiver */
-  // ADF7021_Config_t adf7021_cfg = {
-  //     .hspi = &hspi2,                      /* SPI2 for register access */
-  //     .en_port = GPIOD,                    /* EN (CE) pin on GPIOD */
-  //     .en_pin = ADF7021_EN_Pin,            /* GPIO pin for enable */
-  //     
-  //     .xtal_freq_hz = 16000000,            /* 16 MHz TCXO */
-  //     .xtal_type = 1,                      /* 1 = External TCXO (not internal crystal) */
-  //     
-  //     .center_freq_hz = 144000000,         /* 144 MHz center frequency (adjust as needed) */
-  //     .ref_freq_hz = 16000000,             /* Reference frequency = XTAL */
-  //     
-  //     .data_rate_bps = 9600,               /* 9600 bps data rate */
-  //     
-  //     .mod_type = ADF7021_MOD_2FSK,        /* 2-FSK modulation */
-  //     .freq_deviation = 2400,              /* 2.4 kHz frequency deviation */
-  //     
-  //     .tx_power = ADF7021_PA_POWER_13dBm,  /* 13 dBm TX power */
-  //     
-  //     .if_filter_bw = 12500                /* 12.5 kHz IF filter bandwidth */
-  // };
-  // 
-  // if (ADF7021_Init(&adf7021_cfg) != HAL_OK) {
-  //     Error_Handler();
-  // }
+//   ADF7021_Config_t adf7021_cfg = {
+//       .hspi = &hspi2,                      /* SPI2 for register access */
+//       .en_port = GPIOD,                    /* EN (CE) pin on GPIOD */
+//       .en_pin = ADF7021_EN_Pin,            /* GPIO pin for enable */
+//       
+//       .xtal_freq_hz = 16000000,            /* 16 MHz TCXO */
+//       .xtal_type = 1,                      /* 1 = External TCXO (not internal crystal) */
+//       
+//       .center_freq_hz = 144000000,         /* 144 MHz center frequency (adjust as needed) */
+//       .ref_freq_hz = 16000000,             /* Reference frequency = XTAL */
+//       
+//       .data_rate_bps = 9600,               /* 9600 bps data rate */
+//       
+//       .mod_type = ADF7021_MOD_2FSK,        /* 2-FSK modulation */
+//       .freq_deviation = 2400,              /* 2.4 kHz frequency deviation */
+//       
+//       .tx_power = ADF7021_PA_POWER_13dBm,  /* 13 dBm TX power */
+//       
+//       .if_filter_bw = 12500                /* 12.5 kHz IF filter bandwidth */
+//   };
+//   
+//   if (ADF7021_Init(&adf7021_cfg) != HAL_OK) {
+//       Error_Handler();
+//   }
 
   /* USER CODE END 2 */
 
@@ -216,7 +218,6 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
