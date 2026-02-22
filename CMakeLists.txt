@@ -47,6 +47,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     Core/Src/aic3104.c
     Core/Src/adf7021.c
+    Core/Src/ADF4360.c
+    Core/Src/Communication.c
+    Core/Src/TIME.c
+    Core/Src/modem.c
 )
 
 # Add include paths
