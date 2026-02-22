@@ -8,60 +8,72 @@ extern "C"
 {
 #endif
 
-  void AM_Modulate (const float *message, float *modulated, uint32_t length,
-                    float sampleRate, float carrierFreq, float carrierAmp,
+  /**
+   * @brief Analog Modulation (Complex I/Q baseband output)
+   * 
+   * All modulation functions output complex I/Q samples in interleaved format:
+   * [I0, Q0, I1, Q1, I2, Q2, ...]
+   * 
+   * Output buffer size must be: length * 2 (for I and Q samples)
+   */
+
+  void AM_Modulate (const float *message, float *iq_out, uint32_t length,
+                    float sampleRate, float carrierAmp,
                     float modulationIndex);
 
-  void AM_Demodulate (const float *modulated, float *message, uint32_t length,
-                      float sampleRate, float carrierFreq, float carrierAmp,
-                      float modulationIndex, float lpCutoffHz);
+  void AM_Demodulate (const float *iq_in, float *message, uint32_t length,
+                      float carrierAmp, float modulationIndex, 
+                      float lpCutoffHz);
 
-  void PM_Modulate (const float *message, float *modulated, uint32_t length,
-                    float sampleRate, float carrierFreq, float carrierAmp,
+  void PM_Modulate (const float *message, float *iq_out, uint32_t length,
+                    float sampleRate, float carrierAmp,
                     float phaseSensitivity);
 
-  void PM_Demodulate (const float *modulated, float *message, uint32_t length,
-                      float sampleRate, float carrierFreq,
+  void PM_Demodulate (const float *iq_in, float *message, uint32_t length,
                       float phaseSensitivity);
 
-  void FM_Modulate (const float *message, float *modulated, uint32_t length,
-                    float sampleRate, float carrierFreq, float carrierAmp,
+  void FM_Modulate (const float *message, float *iq_out, uint32_t length,
+                    float sampleRate, float carrierAmp,
                     float freqSensitivity);
 
-  void FM_Demodulate (const float *modulated, float *message, uint32_t length,
-                      float sampleRate, float carrierFreq,
-                      float freqSensitivity);
+  void FM_Demodulate (const float *iq_in, float *message, uint32_t length,
+                      float sampleRate, float freqSensitivity);
 
-  void ASK_Modulate (const uint8_t *bits, uint32_t bitCount, float *modulated,
+  /**
+   * @brief Digital Modulation (Complex I/Q baseband output)
+   * 
+   * Output buffer size must be: bitCount * samplesPerBit * 2 (for I and Q samples)
+   */
+
+  void ASK_Modulate (const uint8_t *bits, uint32_t bitCount, float *iq_out,
                      uint32_t samplesPerBit, float sampleRate,
-                     float carrierFreq, float amp0, float amp1);
+                     float amp0, float amp1);
 
-  void ASK_Demodulate (const float *modulated, uint8_t *bits,
+  void ASK_Demodulate (const float *iq_in, uint8_t *bits,
                        uint32_t bitCount, uint32_t samplesPerBit,
-                       float sampleRate, float carrierFreq,
-                       float decisionThreshold);
+                       float sampleRate, float decisionThreshold);
 
-  void FSK_Modulate (const uint8_t *bits, uint32_t bitCount, float *modulated,
+  void FSK_Modulate (const uint8_t *bits, uint32_t bitCount, float *iq_out,
                      uint32_t samplesPerBit, float sampleRate, float freq0,
-                     float freq1, float carrierAmp);
+                     float freq1);
 
-  void FSK_Demodulate (const float *modulated, uint8_t *bits,
+  void FSK_Demodulate (const float *iq_in, uint8_t *bits,
                        uint32_t bitCount, uint32_t samplesPerBit,
                        float sampleRate, float freq0, float freq1);
 
-  void PSK_Modulate (const uint8_t *bits, uint32_t bitCount, float *modulated,
+  void PSK_Modulate (const uint8_t *bits, uint32_t bitCount, float *iq_out,
                      uint32_t samplesPerBit, float sampleRate,
-                     float carrierFreq, float carrierAmp);
+                     float carrierAmp);
 
-  void PSK_Demodulate (const float *modulated, uint8_t *bits,
+  void PSK_Demodulate (const float *iq_in, uint8_t *bits,
                        uint32_t bitCount, uint32_t samplesPerBit,
-                       float sampleRate, float carrierFreq);
+                       float sampleRate);
 
-  void AFSK_Modulate (const uint8_t *bits, uint32_t bitCount, float *modulated,
+  void AFSK_Modulate (const uint8_t *bits, uint32_t bitCount, float *iq_out,
                       uint32_t samplesPerBit, float sampleRate, float markFreq,
-                      float spaceFreq, float toneAmp);
+                      float spaceFreq);
 
-  void AFSK_Demodulate (const float *modulated, uint8_t *bits,
+  void AFSK_Demodulate (const float *iq_in, uint8_t *bits,
                         uint32_t bitCount, uint32_t samplesPerBit,
                         float sampleRate, float markFreq, float spaceFreq);
 
