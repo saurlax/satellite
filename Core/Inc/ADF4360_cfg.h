@@ -43,6 +43,7 @@
 #define __ADF4360_CFG_H__
 
 
+#include "ADF4360.h"
 struct ADF4360_InitialSettings ADF4360_st = 
 {
     25000000,   // refIn (Hz)

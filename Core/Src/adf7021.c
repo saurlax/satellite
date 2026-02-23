@@ -307,7 +307,7 @@ static HAL_StatusTypeDef ADF7021_ConfigReg2(ADF7021_Config_t *config)
     reg2_data |= (freq_dev & 0xFFF) << 8;
     
     /* [5:3] = TX_POWER (PA level) */
-    reg2_data |= ((uint32_t)config->tx_power & 0x7) << 3;
+    reg2_data |= (0U << 3);
     
     return ADF7021_WriteReg(config, 2, reg2_data);
 }
