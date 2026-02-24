@@ -28,6 +28,7 @@
 #include "ADF4360.h"
 #include "stm32h7xx_hal_gpio.h"
 #include <sys/_intsup.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -171,12 +172,12 @@ int main(void)
       .center_freq_hz = 144000000,         /* 144 MHz center frequency (adjust as needed) */
       .ref_freq_hz = 16000000,             /* Reference frequency = XTAL */
       
-      .data_rate_bps = 9600,               /* 9600 bps data rate */
+      .data_rate_bps = 1200,               /* 1200 bps data rate */
       
       .mod_type = ADF7021_MOD_2FSK,        /* 2-FSK modulation */
       .freq_deviation = 2400,              /* 2.4 kHz frequency deviation */
       
-      .tx_power = ADF7021_PA_POWER_13dBm,  /* 13 dBm TX power */
+      .tx_power = ADF7021_PA_POWER_0dBm,  /* 0 dBm TX power */
       
       .if_filter_bw = 12500                /* 12.5 kHz IF filter bandwidth */
   };

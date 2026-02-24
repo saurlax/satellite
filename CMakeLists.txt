@@ -51,6 +51,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/Communication.c
     Core/Src/TIME.c
     Core/Src/modem.c
+    Drivers/Sensors/DS18B20.c
+    Drivers/Sensors/onewire.c
 )
 
 # Add include paths
