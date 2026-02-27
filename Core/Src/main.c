@@ -26,6 +26,7 @@
 #include "aic3104.h"
 #include "adf7021.h"
 #include "ADF4360.h"
+#include "source.h"
 #include "stm32h7xx_hal_gpio.h"
 #include <sys/_intsup.h>
 
@@ -68,6 +69,12 @@ UART_HandleTypeDef huart3;
 
 osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
+#define AUDIO_SAMPLE_RATE_HZ      8000.0f
+#define AUDIO_FRAME_SAMPLES       256U
+
+static AIC3104_Config_t g_aic3104_cfg;
+static float g_iq_audio_buffer[AUDIO_FRAME_SAMPLES * 2U];
+static int16_t g_i2s_tx_stereo[AUDIO_FRAME_SAMPLES * 2U];
 
 /* USER CODE END PV */
 
@@ -89,6 +96,7 @@ static void MX_USART3_UART_Init(void);
 void StartDefaultTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
+static void PrepareIqAudioFrame(void);
 
 /* USER CODE END PFP */
 
@@ -146,19 +154,23 @@ int main(void)
     while (HAL_GPIO_ReadPin(TXPLL_LD_GPIO_Port, TXPLL_LD_Pin) == GPIO_PIN_RESET);
   }
   /* Initialize AIC3104 codec */
-  // AIC3104_Config_t aic3104_cfg = {
-  //     .hi2c = &hi2c1,
-  //     .hi2s = &hi2s1,
-  //     .reset_port = GPIOD,
-  //     .reset_pin = AIC3104_RST_Pin,
-  //     .mclk_freq = 12288000,     /* 12.288 MHz MCLK */
-  //     .sample_rate = AIC3104_FS_48K,
-  //     .i2s_mode = AIC3104_MODE_MASTER
-  // };
-  // 
-  // if (AIC3104_Init(&aic3104_cfg) != HAL_OK) {
-  //     Error_Handler();
-  // }
+  AIC3104_DefaultConfig(&g_aic3104_cfg, &hi2c1);
+  g_aic3104_cfg.hi2s = &hi2s1;
+  g_aic3104_cfg.reset_port = AIC3104_RST_GPIO_Port;
+  g_aic3104_cfg.reset_pin = AIC3104_RST_Pin;
+  g_aic3104_cfg.sample_rate = AIC3104_FS_8K;
+  g_aic3104_cfg.i2s_mode = AIC3104_MODE_SLAVE;
+  g_aic3104_cfg.enable_adc = false;
+  g_aic3104_cfg.enable_dac = true;
+  g_aic3104_cfg.enable_hp = true;
+  g_aic3104_cfg.enable_lineout = false;
+  g_aic3104_cfg.enable_hpcom = false;
+
+  if (AIC3104_Init(&g_aic3104_cfg) != HAL_OK) {
+      Error_Handler();
+  }
+
+  PrepareIqAudioFrame();
 
   /* Initialize ADF7021 transceiver */
   ADF7021_Config_t adf7021_cfg = {
@@ -892,6 +904,23 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+static void PrepareIqAudioFrame(void)
+{
+  uint32_t i;
+
+  sine_source(g_iq_audio_buffer,
+              AUDIO_FRAME_SAMPLES,
+              300.0f,
+              AUDIO_SAMPLE_RATE_HZ,
+              0.65f);
+
+  for (i = 0U; i < AUDIO_FRAME_SAMPLES; i++) {
+    int16_t sample_i = (int16_t)(g_iq_audio_buffer[2U * i] * 32767.0f);
+    int16_t sample_q = (int16_t)(g_iq_audio_buffer[(2U * i) + 1U] * 32767.0f);
+    g_i2s_tx_stereo[(2U * i)] = sample_i;
+    g_i2s_tx_stereo[(2U * i) + 1U] = sample_q;
+  }
+}
 
 /* USER CODE END 4 */
 
@@ -905,16 +934,23 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
+  uint32_t last_wdi_toggle_tick = HAL_GetTick();
+
   /* Infinite loop */
   for(;;)
   {
+    if (HAL_I2S_Transmit(&hi2s1, (uint16_t *)g_i2s_tx_stereo, AUDIO_FRAME_SAMPLES * 2U, HAL_MAX_DELAY) != HAL_OK) {
+      Error_Handler();
+    }
+
     /* Toggle WDI pin every 100ms to feed the external watchdog */
-    HAL_GPIO_TogglePin(WDI_GPIO_Port, WDI_Pin);
+    if ((HAL_GetTick() - last_wdi_toggle_tick) >= 100U) {
+      HAL_GPIO_TogglePin(WDI_GPIO_Port, WDI_Pin);
+      last_wdi_toggle_tick = HAL_GetTick();
+    }
     
     /* Refresh internal watchdog */
     // HAL_IWDG_Refresh(&hiwdg1);  // Disabled since IWDG init is commented out
-    
-    osDelay(100);
   }
   /* USER CODE END 5 */
 }
