@@ -547,10 +547,26 @@ HAL_StatusTypeDef AIC3104_Init(AIC3104_Config_t *config)
         if (st != HAL_OK) return st;
     }
 
-    st = AIC3104_SetMixerRoute(config, AIC3104_OUTPUT_HP, false, AIC3104_MIXER_DACL1, true, 0x00U);
-    if (st != HAL_OK) return st;
-    st = AIC3104_SetMixerRoute(config, AIC3104_OUTPUT_HP, true, AIC3104_MIXER_DACR1, true, 0x00U);
-    if (st != HAL_OK) return st;
+    if (config->enable_hp) {
+        st = AIC3104_SetMixerRoute(config, AIC3104_OUTPUT_HP, false, AIC3104_MIXER_DACL1, true, 0x00U);
+        if (st != HAL_OK) return st;
+        st = AIC3104_SetMixerRoute(config, AIC3104_OUTPUT_HP, true, AIC3104_MIXER_DACR1, true, 0x00U);
+        if (st != HAL_OK) return st;
+    }
+
+    if (config->enable_lineout) {
+        st = AIC3104_SetMixerRoute(config, AIC3104_OUTPUT_LINE, false, AIC3104_MIXER_DACL1, true, 0x00U);
+        if (st != HAL_OK) return st;
+        st = AIC3104_SetMixerRoute(config, AIC3104_OUTPUT_LINE, true, AIC3104_MIXER_DACR1, true, 0x00U);
+        if (st != HAL_OK) return st;
+    }
+
+    if (config->enable_hpcom) {
+        st = AIC3104_SetMixerRoute(config, AIC3104_OUTPUT_HPCOM, false, AIC3104_MIXER_DACL1, true, 0x00U);
+        if (st != HAL_OK) return st;
+        st = AIC3104_SetMixerRoute(config, AIC3104_OUTPUT_HPCOM, true, AIC3104_MIXER_DACR1, true, 0x00U);
+        if (st != HAL_OK) return st;
+    }
 
     st = AIC3104_SetOutputDriver(config, AIC3104_OUTPUT_HP, false, config->enable_hp, config->enable_hp, 0U);
     if (st != HAL_OK) return st;

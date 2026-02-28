@@ -162,8 +162,8 @@ int main(void)
   g_aic3104_cfg.i2s_mode = AIC3104_MODE_SLAVE;
   g_aic3104_cfg.enable_adc = false;
   g_aic3104_cfg.enable_dac = true;
-  g_aic3104_cfg.enable_hp = true;
-  g_aic3104_cfg.enable_lineout = false;
+  g_aic3104_cfg.enable_hp = false;
+  g_aic3104_cfg.enable_lineout = true;
   g_aic3104_cfg.enable_hpcom = false;
 
   if (AIC3104_Init(&g_aic3104_cfg) != HAL_OK) {
