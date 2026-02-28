@@ -76,7 +76,7 @@ unsigned char ADF4360_Init(unsigned char adf4360Version)
 	unsigned char status = 0x0;
     
 	/* Initialize SPI communication. */
-    status = SPI_Init(0, 1000000, 0, 1);
+    status = 1;
     /* Initialize timer. */
     TIME_Init();
     /* Store the version of the device in use. */
@@ -92,7 +92,7 @@ unsigned char ADF4360_Init(unsigned char adf4360Version)
               ADF4360_CTRL_MTLD * ADF4360_st.muteTillLd | 
               ADF4360_CTRL_CP_GAIN * ADF4360_st.cpGain | 
               ADF4360_CTRL_CP_THREE_STATE * ADF4360_st.cpThreeState | 
-              ADF4360_CTRL_PHASE_DETECT_POL * ADF4360_st.phaseDetectPol | 
+              ADF4360_CTRL_PHASE_DETECT_POL(ADF4360_st.phaseDetectPol) | 
               ADF4360_CTRL_MUXOUT(ADF4360_st.muxControl) | 
               ADF4360_CTRL_CORE_POWER(ADF4360_st.corePowerLevel);
     ADF4360_Write(ADF4360_REG_CONTROL | regCtrl);

@@ -168,7 +168,7 @@ unsigned char SPI_Read(unsigned char slaveDeviceId,
     HAL_StatusTypeDef status = HAL_SPI_Receive(&hspi3, data, bytesNumber, 1000);
     SPI3_CS_Deselect();
 
-    return (status == HAL_OK) ? 1 : 0;
+    return (status == HAL_OK) ? bytesNumber : 0;
 }
 
 /***************************************************************************//**
@@ -190,5 +190,5 @@ unsigned char SPI_Write(unsigned char slaveDeviceId,
     HAL_StatusTypeDef status = HAL_SPI_Transmit(&hspi3, data, bytesNumber, 1000);
     SPI3_CS_Deselect();
 
-    return (status == HAL_OK) ? 1 : 0;
+    return (status == HAL_OK) ? bytesNumber : 0;
 }
