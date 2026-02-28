@@ -29,6 +29,7 @@
 #include "source.h"
 #include "stm32h7xx_hal_gpio.h"
 #include <sys/_intsup.h>
+#include <stdio.h>
 
 /* USER CODE END Includes */
 
@@ -97,6 +98,7 @@ void StartDefaultTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
 static void PrepareIqAudioFrame(void);
+static void DumpAic3104Regs(void);
 
 /* USER CODE END PFP */
 
@@ -169,6 +171,8 @@ int main(void)
   if (AIC3104_Init(&g_aic3104_cfg) != HAL_OK) {
       Error_Handler();
   }
+
+  DumpAic3104Regs();
 
   PrepareIqAudioFrame();
 
@@ -919,6 +923,34 @@ static void PrepareIqAudioFrame(void)
     int16_t sample_q = (int16_t)(g_iq_audio_buffer[(2U * i) + 1U] * 32767.0f);
     g_i2s_tx_stereo[(2U * i)] = sample_i;
     g_i2s_tx_stereo[(2U * i) + 1U] = sample_q;
+  }
+}
+
+static void DumpAic3104Regs(void)
+{
+  const uint8_t regs[] = {
+    AIC3104_REG_DAC_PWR,
+    AIC3104_REG_DACL1_TO_LLOPM,
+    AIC3104_REG_DACR1_TO_RLOPM,
+    AIC3104_REG_LLOPM_CTRL,
+    AIC3104_REG_RLOPM_CTRL
+  };
+  char msg[64];
+
+  for (uint32_t i = 0U; i < (uint32_t)(sizeof(regs) / sizeof(regs[0])); i++) {
+    uint8_t value = 0U;
+    int len;
+
+    if (AIC3104_ReadReg(&g_aic3104_cfg, regs[i], &value) == HAL_OK) {
+      len = snprintf(msg, sizeof(msg), "AIC3104 R0x%02X = 0x%02X\r\n", regs[i], value);
+    } else {
+      len = snprintf(msg, sizeof(msg), "AIC3104 R0x%02X read fail\r\n", regs[i]);
+    }
+
+    if (len > 0) {
+      uint16_t tx_len = (len < (int)sizeof(msg)) ? (uint16_t)len : (uint16_t)(sizeof(msg) - 1U);
+      (void)HAL_UART_Transmit(&huart1, (uint8_t *)msg, tx_len, 100U);
+    }
   }
 }
 
