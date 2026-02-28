@@ -15,6 +15,33 @@ static HAL_StatusTypeDef aic3104_write_checked(AIC3104_Config_t *config, uint8_t
     return st;
 }
 
+static HAL_StatusTypeDef aic3104_sync_sample_rate_reg(AIC3104_Config_t *config)
+{
+    uint8_t sr_code;
+
+    if (config == NULL) {
+        return HAL_ERROR;
+    }
+
+    switch (config->sample_rate) {
+    case AIC3104_FS_8K:
+        sr_code = 0x0AU;
+        break;
+    case AIC3104_FS_16K:
+        sr_code = 0x04U;
+        break;
+    case AIC3104_FS_44K:
+    case AIC3104_FS_48K:
+        sr_code = 0x00U;
+        break;
+    default:
+        return HAL_ERROR;
+    }
+
+    config->clock.sample_rate_reg = (uint8_t)((sr_code << 4) | sr_code);
+    return HAL_OK;
+}
+
 static HAL_StatusTypeDef aic3104_output_ctrl_reg(AIC3104_OutputType_e output, bool right_channel, uint8_t *reg)
 {
     if (reg == NULL) {
@@ -140,6 +167,8 @@ void AIC3104_DefaultConfig(AIC3104_Config_t *config, I2C_HandleTypeDef *hi2c)
     config->enable_hp = true;
     config->enable_lineout = false;
     config->enable_hpcom = false;
+
+    (void)aic3104_sync_sample_rate_reg(config);
 }
 
 HAL_StatusTypeDef AIC3104_WriteReg(AIC3104_Config_t *config, uint8_t reg, uint8_t val)
@@ -469,6 +498,9 @@ HAL_StatusTypeDef AIC3104_Init(AIC3104_Config_t *config)
     if (st != HAL_OK) return st;
 
     HAL_Delay(5U);
+
+    st = aic3104_sync_sample_rate_reg(config);
+    if (st != HAL_OK) return st;
 
     st = AIC3104_ApplyClockConfig(config);
     if (st != HAL_OK) return st;
