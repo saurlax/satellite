@@ -19,7 +19,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
-#include "stm32h7xx_hal_dac.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -70,8 +69,10 @@ UART_HandleTypeDef huart3;
 
 osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
-#define AUDIO_SAMPLE_RATE_HZ      8000.0f
-#define AUDIO_FRAME_SAMPLES       256U
+#define AUDIO_SAMPLE_RATE_HZ      48000.0f
+/* Choose frame length N so N*f/Fs is integer for seamless loop */
+/* eg: Fs=48k, N=240 and f=1k gives 5 integer cycles per frame */
+#define AUDIO_FRAME_SAMPLES       240U
 
 static AIC3104_Config_t g_aic3104_cfg;
 static float g_iq_audio_buffer[AUDIO_FRAME_SAMPLES * 2U];
@@ -151,25 +152,25 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-  if (ADF4360_Init(ADF4360_7)) {
-    ADF4360_SetFrequency(436500000ULL);
-    while (HAL_GPIO_ReadPin(TXPLL_LD_GPIO_Port, TXPLL_LD_Pin) == GPIO_PIN_RESET);
-  }
+
+  // if (ADF4360_Init(ADF4360_7)) {
+  //   ADF4360_SetFrequency(436500000ULL);
+  //   while (HAL_GPIO_ReadPin(TXPLL_LD_GPIO_Port, TXPLL_LD_Pin) == GPIO_PIN_RESET);
+  // }
   /* Initialize AIC3104 codec */
   AIC3104_DefaultConfig(&g_aic3104_cfg, &hi2c1);
   g_aic3104_cfg.hi2s = &hi2s1;
   g_aic3104_cfg.reset_port = AIC3104_RST_GPIO_Port;
   g_aic3104_cfg.reset_pin = AIC3104_RST_Pin;
-  g_aic3104_cfg.sample_rate = AIC3104_FS_8K;
+  g_aic3104_cfg.sample_rate = AIC3104_FS_48K;
   g_aic3104_cfg.i2s_mode = AIC3104_MODE_SLAVE;
   g_aic3104_cfg.enable_adc = false;
   g_aic3104_cfg.enable_dac = true;
-  g_aic3104_cfg.enable_hp = false;
+  g_aic3104_cfg.enable_hp = true;
   g_aic3104_cfg.enable_lineout = true;
-  g_aic3104_cfg.enable_hpcom = false;
-
+  g_aic3104_cfg.enable_hpcom = true;
   if (AIC3104_Init(&g_aic3104_cfg) != HAL_OK) {
-      Error_Handler();
+    Error_Handler();
   }
 
   DumpAic3104Regs();
@@ -177,30 +178,30 @@ int main(void)
   PrepareIqAudioFrame();
 
   /* Initialize ADF7021 transceiver */
-  ADF7021_Config_t adf7021_cfg = {
-      .hspi = &hspi2,                      /* SPI2 for register access */
-      .en_port = ADF7021_EN_GPIO_Port,     /* EN (CE) pin on GPIOD */
-      .en_pin = ADF7021_EN_Pin,            /* GPIO pin for enable */
+  // ADF7021_Config_t adf7021_cfg = {
+  //     .hspi = &hspi2,                      /* SPI2 for register access */
+  //     .en_port = ADF7021_EN_GPIO_Port,     /* EN (CE) pin on GPIOD */
+  //     .en_pin = ADF7021_EN_Pin,            /* GPIO pin for enable */
       
-      .xtal_freq_hz = 16000000,            /* 16 MHz TCXO */
-      .xtal_type = 1,                      /* 1 = External TCXO (not internal crystal) */
+  //     .xtal_freq_hz = 16000000,            /* 16 MHz TCXO */
+  //     .xtal_type = 1,                      /* 1 = External TCXO (not internal crystal) */
       
-      .center_freq_hz = 144000000,         /* 144 MHz center frequency (adjust as needed) */
-      .ref_freq_hz = 16000000,             /* Reference frequency = XTAL */
+  //     .center_freq_hz = 144000000,         /* 144 MHz center frequency (adjust as needed) */
+  //     .ref_freq_hz = 16000000,             /* Reference frequency = XTAL */
       
-      .data_rate_bps = 1200,               /* 1200 bps data rate */
+  //     .data_rate_bps = 1200,               /* 1200 bps data rate */
       
-      .mod_type = ADF7021_MOD_2FSK,        /* 2-FSK modulation */
-      .freq_deviation = 2400,              /* 2.4 kHz frequency deviation */
+  //     .mod_type = ADF7021_MOD_2FSK,        /* 2-FSK modulation */
+  //     .freq_deviation = 2400,              /* 2.4 kHz frequency deviation */
       
-      .tx_power = ADF7021_PA_POWER_0dBm,  /* 0 dBm TX power */
+  //     .tx_power = ADF7021_PA_POWER_0dBm,  /* 0 dBm TX power */
       
-      .if_filter_bw = 12500                /* 12.5 kHz IF filter bandwidth */
-  };
+  //     .if_filter_bw = 12500                /* 12.5 kHz IF filter bandwidth */
+  // };
   
-  if (ADF7021_Init(&adf7021_cfg) != HAL_OK) {
-      Error_Handler();
-  }
+  // if (ADF7021_Init(&adf7021_cfg) != HAL_OK) {
+  //     Error_Handler();
+  // }
 
   /* USER CODE END 2 */
 
@@ -475,7 +476,7 @@ static void MX_I2S1_Init(void)
   hi2s1.Init.Standard = I2S_STANDARD_PHILIPS;
   hi2s1.Init.DataFormat = I2S_DATAFORMAT_16B;
   hi2s1.Init.MCLKOutput = I2S_MCLKOUTPUT_ENABLE;
-  hi2s1.Init.AudioFreq = I2S_AUDIOFREQ_8K;
+  hi2s1.Init.AudioFreq = I2S_AUDIOFREQ_48K;
   hi2s1.Init.CPOL = I2S_CPOL_LOW;
   hi2s1.Init.FirstBit = I2S_FIRSTBIT_MSB;
   hi2s1.Init.WSInversion = I2S_WS_INVERSION_DISABLE;
@@ -914,9 +915,9 @@ static void PrepareIqAudioFrame(void)
 
   sine_source(g_iq_audio_buffer,
               AUDIO_FRAME_SAMPLES,
-              300.0f,
+              1000.0f,
               AUDIO_SAMPLE_RATE_HZ,
-              0.65f);
+              0.8f);
 
   for (i = 0U; i < AUDIO_FRAME_SAMPLES; i++) {
     int16_t sample_i = (int16_t)(g_iq_audio_buffer[2U * i] * 32767.0f);
@@ -982,7 +983,7 @@ void StartDefaultTask(void const * argument)
     }
     
     /* Refresh internal watchdog */
-    // HAL_IWDG_Refresh(&hiwdg1);  // Disabled since IWDG init is commented out
+    HAL_IWDG_Refresh(&hiwdg1);
   }
   /* USER CODE END 5 */
 }
