@@ -153,10 +153,10 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-  // if (ADF4360_Init(ADF4360_7)) {
-  //   ADF4360_SetFrequency(436500000ULL);
-  //   while (HAL_GPIO_ReadPin(TXPLL_LD_GPIO_Port, TXPLL_LD_Pin) == GPIO_PIN_RESET);
-  // }
+  if (ADF4360_Init(ADF4360_7)) {
+    ADF4360_SetFrequency(436500000ULL);
+    while (HAL_GPIO_ReadPin(TXPLL_LD_GPIO_Port, TXPLL_LD_Pin) == GPIO_PIN_RESET);
+  }
   /* Initialize AIC3104 codec */
   AIC3104_DefaultConfig(&g_aic3104_cfg, &hi2c1);
   g_aic3104_cfg.hi2s = &hi2s1;
