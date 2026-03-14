@@ -109,6 +109,19 @@ static void DumpAic3104Regs(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+int __io_putchar(int ch)
+{
+  uint8_t c = (uint8_t)ch;
+
+  if (ch == '\n') {
+    uint8_t cr = '\r';
+    (void)HAL_UART_Transmit(&huart1, &cr, 1U, 100U);
+  }
+
+  (void)HAL_UART_Transmit(&huart1, &c, 1U, 100U);
+  return ch;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -211,6 +224,7 @@ int main(void)
 
   /* Start scheduler */
   osKernelStart();
+  printf("System initialized. Starting scheduler...\n");
 
   /* We should never get here as control is now taken by the scheduler */
 
@@ -947,6 +961,8 @@ void StartDefaultTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
   (void)argument;
+
+  printf("printf via UART1 is ready\r\n");
 
   HAL_GPIO_WritePin(TXPLL__CE_GPIO_Port, TXPLL__CE_Pin, GPIO_PIN_SET);
   if (ADF4360_Init(ADF4360_7)) {
