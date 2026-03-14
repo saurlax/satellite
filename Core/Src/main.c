@@ -224,7 +224,6 @@ int main(void)
 
   /* Start scheduler */
   osKernelStart();
-  printf("System initialized. Starting scheduler...\n");
 
   /* We should never get here as control is now taken by the scheduler */
 
