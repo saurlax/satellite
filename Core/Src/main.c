@@ -69,6 +69,7 @@ UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 
 osThreadId defaultTaskHandle;
+osThreadId watchdogTaskHandle;
 /* USER CODE BEGIN PV */
 #define AUDIO_SAMPLE_RATE_HZ      48000.0f
 /* Choose frame length N so N*f/Fs is integer for seamless loop */
@@ -97,6 +98,7 @@ static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 void StartDefaultTask(void const * argument);
+void StartWatchdogTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
 static void PrepareIqAudioFrame(void);
@@ -153,33 +155,6 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_GPIO_WritePin(TXPLL__CE_GPIO_Port, TXPLL__CE_Pin, GPIO_PIN_SET);
-  if (ADF4360_Init(ADF4360_7)) {
-    ADF4360_SetFrequency(873000000ULL);
-    while (HAL_GPIO_ReadPin(TXPLL_LD_GPIO_Port, TXPLL_LD_Pin) == GPIO_PIN_RESET);
-  }
-  
-  /* Initialize AIC3104 codec */
-  AIC3104_DefaultConfig(&g_aic3104_cfg, &hi2c1);
-  g_aic3104_cfg.hi2s = &hi2s1;
-  g_aic3104_cfg.reset_port = AIC3104_RST_GPIO_Port;
-  g_aic3104_cfg.reset_pin = AIC3104_RST_Pin;
-  g_aic3104_cfg.sample_rate = AIC3104_FS_48K;
-  g_aic3104_cfg.i2s_mode = AIC3104_MODE_SLAVE;
-  g_aic3104_cfg.enable_adc = false;
-  g_aic3104_cfg.enable_dac = true;
-  g_aic3104_cfg.enable_hp = true;
-  g_aic3104_cfg.enable_lineout = true;
-  g_aic3104_cfg.enable_hpcom = true;
-
-  if (AIC3104_Init(&g_aic3104_cfg) != HAL_OK) {
-    Error_Handler();
-  }
-
-  DumpAic3104Regs();
-
-  PrepareIqAudioFrame();
-
   /* Initialize ADF7021 transceiver */
   // ADF7021_Config_t adf7021_cfg = {
   //     .hspi = &hspi2,                      /* SPI2 for register access */
@@ -228,6 +203,10 @@ int main(void)
   /* definition and creation of defaultTask */
   osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+
+  /* definition and creation of watchdogTask */
+  osThreadDef(watchdogTask, StartWatchdogTask, osPriorityAboveNormal, 0, 128);
+  watchdogTaskHandle = osThreadCreate(osThread(watchdogTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -970,7 +949,35 @@ static void DumpAic3104Regs(void)
 void StartDefaultTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
-  uint32_t last_wdi_toggle_tick = HAL_GetTick();
+  (void)argument;
+
+  HAL_GPIO_WritePin(TXPLL__CE_GPIO_Port, TXPLL__CE_Pin, GPIO_PIN_SET);
+  if (ADF4360_Init(ADF4360_7)) {
+    ADF4360_SetFrequency(873000000ULL);
+    while (HAL_GPIO_ReadPin(TXPLL_LD_GPIO_Port, TXPLL_LD_Pin) == GPIO_PIN_RESET) {
+      osDelay(1U);
+    }
+  }
+
+  /* Initialize AIC3104 codec */
+  AIC3104_DefaultConfig(&g_aic3104_cfg, &hi2c1);
+  g_aic3104_cfg.hi2s = &hi2s1;
+  g_aic3104_cfg.reset_port = AIC3104_RST_GPIO_Port;
+  g_aic3104_cfg.reset_pin = AIC3104_RST_Pin;
+  g_aic3104_cfg.sample_rate = AIC3104_FS_48K;
+  g_aic3104_cfg.i2s_mode = AIC3104_MODE_SLAVE;
+  g_aic3104_cfg.enable_adc = false;
+  g_aic3104_cfg.enable_dac = true;
+  g_aic3104_cfg.enable_hp = true;
+  g_aic3104_cfg.enable_lineout = true;
+  g_aic3104_cfg.enable_hpcom = true;
+
+  if (AIC3104_Init(&g_aic3104_cfg) != HAL_OK) {
+    Error_Handler();
+  }
+
+  DumpAic3104Regs();
+  PrepareIqAudioFrame();
 
   /* Infinite loop */
   for(;;)
@@ -978,17 +985,24 @@ void StartDefaultTask(void const * argument)
     if (HAL_I2S_Transmit(&hi2s1, (uint16_t *)g_i2s_tx_stereo, AUDIO_FRAME_SAMPLES * 2U, HAL_MAX_DELAY) != HAL_OK) {
       Error_Handler();
     }
-
-    /* Toggle WDI pin every 100ms to feed the external watchdog */
-    if ((HAL_GetTick() - last_wdi_toggle_tick) >= 100U) {
-      HAL_GPIO_TogglePin(WDI_GPIO_Port, WDI_Pin);
-      last_wdi_toggle_tick = HAL_GetTick();
-    }
     
     /* Refresh internal watchdog */
     HAL_IWDG_Refresh(&hiwdg1);  // Disabled since IWDG init is commented out
   }
   /* USER CODE END 5 */
+}
+
+void StartWatchdogTask(void const * argument)
+{
+  /* USER CODE BEGIN StartWatchdogTask */
+  (void)argument;
+
+  for(;;)
+  {
+    HAL_GPIO_TogglePin(WDI_GPIO_Port, WDI_Pin);
+    osDelay(100U);
+  }
+  /* USER CODE END StartWatchdogTask */
 }
 
  /* MPU Configuration */
