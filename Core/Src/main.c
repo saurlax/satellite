@@ -152,8 +152,18 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   if (ADF4360_Init(ADF4360_7)) {
-    ADF4360_SetFrequency(436500000ULL);
-    while (HAL_GPIO_ReadPin(TXPLL_LD_GPIO_Port, TXPLL_LD_Pin) == GPIO_PIN_RESET);
+      ADF4360_SetFrequency(873000000ULL);
+
+      // 等待锁相，最多等待 10 毫秒（可根据实际调整）
+      uint32_t timeout = HAL_GetTick() + 10; // 10 ms 超时
+      while (HAL_GPIO_ReadPin(TXPLL_LD_GPIO_Port, TXPLL_LD_Pin) == GPIO_PIN_RESET) {
+          if (HAL_GetTick() > timeout) {
+              // 超时处理
+              Error_Handler();
+              break;
+          }
+      }
+      // 如果没超时，说明已锁定
   }
   /* Initialize AIC3104 codec */
   AIC3104_DefaultConfig(&g_aic3104_cfg, &hi2c1);
@@ -587,7 +597,7 @@ static void MX_SPI3_Init(void)
   hspi3.Instance = SPI3;
   hspi3.Init.Mode = SPI_MODE_MASTER;
   hspi3.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi3.Init.DataSize = SPI_DATASIZE_4BIT;
+  hspi3.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi3.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi3.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi3.Init.NSS = SPI_NSS_HARD_OUTPUT;
