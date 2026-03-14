@@ -204,12 +204,9 @@ int main(void)
   osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
-  /* definition and creation of watchdogTask */
+  /* USER CODE BEGIN RTOS_THREADS */
   osThreadDef(watchdogTask, StartWatchdogTask, osPriorityAboveNormal, 0, 128);
   watchdogTaskHandle = osThreadCreate(osThread(watchdogTask), NULL);
-
-  /* USER CODE BEGIN RTOS_THREADS */
-  /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
 
   /* Start scheduler */
@@ -985,9 +982,6 @@ void StartDefaultTask(void const * argument)
     if (HAL_I2S_Transmit(&hi2s1, (uint16_t *)g_i2s_tx_stereo, AUDIO_FRAME_SAMPLES * 2U, HAL_MAX_DELAY) != HAL_OK) {
       Error_Handler();
     }
-    
-    /* Refresh internal watchdog */
-    HAL_IWDG_Refresh(&hiwdg1);  // Disabled since IWDG init is commented out
   }
   /* USER CODE END 5 */
 }
@@ -1000,6 +994,7 @@ void StartWatchdogTask(void const * argument)
   for(;;)
   {
     HAL_GPIO_TogglePin(WDI_GPIO_Port, WDI_Pin);
+    HAL_IWDG_Refresh(&hiwdg1);
     osDelay(100U);
   }
   /* USER CODE END StartWatchdogTask */
