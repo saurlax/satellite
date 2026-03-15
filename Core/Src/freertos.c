@@ -28,7 +28,12 @@
 #include <stdio.h>
 
 #include "ADF4360.h"
+#include "aic3104.h"
+#include "i2c.h"
+#include "i2s.h"
 #include "iwdg.h"
+#include "source.h"
+#include "usart.h"
 
 /* USER CODE END Includes */
 
@@ -49,6 +54,14 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
+#define AUDIO_SAMPLE_RATE_HZ      48000.0f
+/* Choose frame length N so N*f/Fs is integer for seamless loop */
+/* eg: Fs=48k, N=240 and f=1k gives 5 integer cycles per frame */
+#define AUDIO_FRAME_SAMPLES       240U
+
+static AIC3104_Config_t g_aic3104_cfg;
+static float g_iq_audio_buffer[AUDIO_FRAME_SAMPLES * 2U];
+static int16_t g_i2s_tx_stereo[AUDIO_FRAME_SAMPLES * 2U];
 
 /* USER CODE END Variables */
 osThreadId defaultTaskHandle;
@@ -56,6 +69,8 @@ osThreadId watchdogTaskHandle;
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
+static void PrepareIqAudioFrame(void);
+static void DumpAic3104Regs(void);
 
 /* USER CODE END FunctionPrototypes */
 
@@ -142,10 +157,32 @@ void StartDefaultTask(void const * argument)
     // }
   }
 
+  /* Initialize AIC3104 codec */
+  AIC3104_DefaultConfig(&g_aic3104_cfg, &hi2c1);
+  g_aic3104_cfg.hi2s = &hi2s1;
+  g_aic3104_cfg.reset_port = AIC3104_RST_GPIO_Port;
+  g_aic3104_cfg.reset_pin = AIC3104_RST_Pin;
+  g_aic3104_cfg.sample_rate = AIC3104_FS_48K;
+  g_aic3104_cfg.i2s_mode = AIC3104_MODE_SLAVE;
+  g_aic3104_cfg.enable_adc = false;
+  g_aic3104_cfg.enable_dac = true;
+  g_aic3104_cfg.enable_hp = true;
+  g_aic3104_cfg.enable_lineout = true;
+  g_aic3104_cfg.enable_hpcom = true;
+
+  if (AIC3104_Init(&g_aic3104_cfg) != HAL_OK) {
+    Error_Handler();
+  }
+
+  DumpAic3104Regs();
+  PrepareIqAudioFrame();
+
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1U);
+    if (HAL_I2S_Transmit(&hi2s1, (uint16_t *)g_i2s_tx_stereo, AUDIO_FRAME_SAMPLES * 2U, HAL_MAX_DELAY) != HAL_OK) {
+      Error_Handler();
+    }
   }
   /* USER CODE END StartDefaultTask */
 }
@@ -173,6 +210,51 @@ void StartWatchdogTask(void const * argument)
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+static void PrepareIqAudioFrame(void)
+{
+  uint32_t i;
+
+  sine_source(g_iq_audio_buffer,
+              AUDIO_FRAME_SAMPLES,
+              1000.0f,
+              AUDIO_SAMPLE_RATE_HZ,
+              0.8f);
+
+  for (i = 0U; i < AUDIO_FRAME_SAMPLES; i++) {
+    int16_t sample_i = (int16_t)(g_iq_audio_buffer[2U * i] * 32767.0f);
+    int16_t sample_q = (int16_t)(g_iq_audio_buffer[(2U * i) + 1U] * 32767.0f);
+    g_i2s_tx_stereo[(2U * i)] = sample_i;
+    g_i2s_tx_stereo[(2U * i) + 1U] = sample_q;
+  }
+}
+
+static void DumpAic3104Regs(void)
+{
+  const uint8_t regs[] = {
+    AIC3104_REG_DAC_PWR,
+    AIC3104_REG_DACL1_TO_LLOPM,
+    AIC3104_REG_DACR1_TO_RLOPM,
+    AIC3104_REG_LLOPM_CTRL,
+    AIC3104_REG_RLOPM_CTRL
+  };
+  char msg[64];
+
+  for (uint32_t i = 0U; i < (uint32_t)(sizeof(regs) / sizeof(regs[0])); i++) {
+    uint8_t value = 0U;
+    int len;
+
+    if (AIC3104_ReadReg(&g_aic3104_cfg, regs[i], &value) == HAL_OK) {
+      len = snprintf(msg, sizeof(msg), "AIC3104 R0x%02X = 0x%02X\r\n", regs[i], value);
+    } else {
+      len = snprintf(msg, sizeof(msg), "AIC3104 R0x%02X read fail\r\n", regs[i]);
+    }
+
+    if (len > 0) {
+      uint16_t tx_len = (len < (int)sizeof(msg)) ? (uint16_t)len : (uint16_t)(sizeof(msg) - 1U);
+      (void)HAL_UART_Transmit(&huart1, (uint8_t *)msg, tx_len, 100U);
+    }
+  }
+}
 
 
 /* USER CODE END Application */
