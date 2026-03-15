@@ -21,6 +21,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -46,11 +47,18 @@
 /* USER CODE BEGIN Variables */
 
 /* USER CODE END Variables */
+osThreadId defaultTaskHandle;
+osThreadId watchdogTaskHandle;
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
 
 /* USER CODE END FunctionPrototypes */
+
+void StartDefaultTask(void const * argument);
+void StartWatchdogTask(void const * argument);
+
+void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
 /* GetIdleTaskMemory prototype (linked to static allocation support) */
 void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, uint32_t *pulIdleTaskStackSize );
@@ -68,7 +76,121 @@ void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackTy
 }
 /* USER CODE END GET_IDLE_TASK_MEMORY */
 
+/**
+  * @brief  FreeRTOS initialization
+  * @param  None
+  * @retval None
+  */
+void MX_FREERTOS_Init(void) {
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+  /* USER CODE END RTOS_QUEUES */
+
+  /* Create the thread(s) */
+  /* definition and creation of defaultTask */
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+
+  /* definition and creation of watchdogTask */
+  osThreadDef(watchdogTask, StartWatchdogTask, osPriorityIdle, 0, 128);
+  watchdogTaskHandle = osThreadCreate(osThread(watchdogTask), NULL);
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
+
+}
+
+/* USER CODE BEGIN Header_StartDefaultTask */
+/**
+  * @brief  Function implementing the defaultTask thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void const * argument)
+{
+  /* USER CODE BEGIN StartDefaultTask */
+  printf("printf via UART1 is ready\r\n");
+
+  HAL_GPIO_WritePin(TXPLL__CE_GPIO_Port, TXPLL__CE_Pin, GPIO_PIN_SET);
+  if (ADF4360_Init(ADF4360_7)) {
+    ADF4360_SetFrequency(873000000ULL);
+    while (HAL_GPIO_ReadPin(TXPLL_LD_GPIO_Port, TXPLL_LD_Pin) == GPIO_PIN_RESET) {
+      osDelay(1U);
+    }
+  }
+
+  /* Initialize AIC3104 codec */
+  AIC3104_DefaultConfig(&g_aic3104_cfg, &hi2c1);
+  g_aic3104_cfg.hi2s = &hi2s1;
+  g_aic3104_cfg.reset_port = AIC3104_RST_GPIO_Port;
+  g_aic3104_cfg.reset_pin = AIC3104_RST_Pin;
+  g_aic3104_cfg.sample_rate = AIC3104_FS_48K;
+  g_aic3104_cfg.i2s_mode = AIC3104_MODE_SLAVE;
+  g_aic3104_cfg.enable_adc = false;
+  g_aic3104_cfg.enable_dac = true;
+  g_aic3104_cfg.enable_hp = true;
+  g_aic3104_cfg.enable_lineout = true;
+  g_aic3104_cfg.enable_hpcom = true;
+
+  if (AIC3104_Init(&g_aic3104_cfg) != HAL_OK) {
+    Error_Handler();
+  }
+
+  DumpAic3104Regs();
+  PrepareIqAudioFrame();
+
+  /* Infinite loop */
+  for(;;)
+  {
+    if (HAL_I2S_Transmit(&hi2s1, (uint16_t *)g_i2s_tx_stereo, AUDIO_FRAME_SAMPLES * 2U, HAL_MAX_DELAY) != HAL_OK) {
+      Error_Handler();
+    }
+    osDelay(1);  // 一定要osdelay，否则会一直占用CPU，导致看门狗无法刷新
+  }
+  /* USER CODE END StartDefaultTask */
+}
+
+/* USER CODE BEGIN Header_StartWatchdogTask */
+/**
+* @brief Function implementing the watchdogTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartWatchdogTask */
+void StartWatchdogTask(void const * argument)
+{
+  /* USER CODE BEGIN StartWatchdogTask */
+  (void)argument;
+
+  for(;;)
+  {
+    HAL_GPIO_TogglePin(WDI_GPIO_Port, WDI_Pin);
+    HAL_IWDG_Refresh(&hiwdg1);
+    osDelay(100U);
+  }
+  /* USER CODE END StartWatchdogTask */
+}
+
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+
 
 /* USER CODE END Application */

@@ -45,20 +45,21 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
-    Core/Src/aic3104.c
-    Core/Src/source.c
-    Core/Src/adf7021.c
-    Core/Src/ADF4360.c
-    Core/Src/Communication.c
-    Core/Src/TIME.c
-    Core/Src/modem.c
-    Drivers/Sensors/DS18B20.c
-    Drivers/Sensors/onewire.c
+    Libraries/aic3104.c
+    Libraries/adf7021.c
+    Libraries/ADF4360.c
+    Libraries/Communication.c
+    Libraries/TIME.c
+    Libraries/modem.c
+    Libraries/DS18B20/DS18B20.c
+    Libraries/DS18B20/onewire.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+    Libraries/DS18B20
+    Libraries
 )
 
 # Add project symbols (macros)
