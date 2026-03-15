@@ -25,6 +25,10 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
+
+#include "ADF4360.h"
+#include "iwdg.h"
 
 /* USER CODE END Includes */
 
@@ -127,6 +131,7 @@ void MX_FREERTOS_Init(void) {
 void StartDefaultTask(void const * argument)
 {
   /* USER CODE BEGIN StartDefaultTask */
+  (void)argument;
   printf("printf via UART1 is ready\r\n");
 
   HAL_GPIO_WritePin(TXPLL__CE_GPIO_Port, TXPLL__CE_Pin, GPIO_PIN_SET);
@@ -137,33 +142,10 @@ void StartDefaultTask(void const * argument)
     }
   }
 
-  /* Initialize AIC3104 codec */
-  AIC3104_DefaultConfig(&g_aic3104_cfg, &hi2c1);
-  g_aic3104_cfg.hi2s = &hi2s1;
-  g_aic3104_cfg.reset_port = AIC3104_RST_GPIO_Port;
-  g_aic3104_cfg.reset_pin = AIC3104_RST_Pin;
-  g_aic3104_cfg.sample_rate = AIC3104_FS_48K;
-  g_aic3104_cfg.i2s_mode = AIC3104_MODE_SLAVE;
-  g_aic3104_cfg.enable_adc = false;
-  g_aic3104_cfg.enable_dac = true;
-  g_aic3104_cfg.enable_hp = true;
-  g_aic3104_cfg.enable_lineout = true;
-  g_aic3104_cfg.enable_hpcom = true;
-
-  if (AIC3104_Init(&g_aic3104_cfg) != HAL_OK) {
-    Error_Handler();
-  }
-
-  DumpAic3104Regs();
-  PrepareIqAudioFrame();
-
   /* Infinite loop */
   for(;;)
   {
-    if (HAL_I2S_Transmit(&hi2s1, (uint16_t *)g_i2s_tx_stereo, AUDIO_FRAME_SAMPLES * 2U, HAL_MAX_DELAY) != HAL_OK) {
-      Error_Handler();
-    }
-    osDelay(1);  // 一定要osdelay，否则会一直占用CPU，导致看门狗无法刷新
+    osDelay(1U);
   }
   /* USER CODE END StartDefaultTask */
 }
