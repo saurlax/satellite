@@ -69,8 +69,6 @@ void Error_Handler(void);
 #define FAULT3V3_GPIO_Port GPIOE
 #define TXPLL__ENE13_Pin GPIO_PIN_13
 #define TXPLL__ENE13_GPIO_Port GPIOE
-#define TXPLL__CEB13_Pin GPIO_PIN_13
-#define TXPLL__CEB13_GPIO_Port GPIOB
 #define AIC3104_RST_Pin GPIO_PIN_13
 #define AIC3104_RST_GPIO_Port GPIOD
 #define PA_EN_Pin GPIO_PIN_7

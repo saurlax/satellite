@@ -24,6 +24,7 @@
 #include "i2c.h"
 #include "i2s.h"
 #include "iwdg.h"
+#include "ramecc.h"
 #include "spi.h"
 #include "usart.h"
 #include "gpio.h"
@@ -141,6 +142,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
+  MX_RAMECC_Init();
   /* USER CODE BEGIN 2 */
   /* Initialize ADF7021 transceiver */
   // ADF7021_Config_t adf7021_cfg = {

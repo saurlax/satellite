@@ -61,8 +61,8 @@ struct ADF4360_InitialSettings ADF4360_st =
     0,   // corePowerLevel;
     
     /* N Counter Latch */
-    1,  // divideBy2Select. Not available for ADF4360-8 and ADF4360-9
-    1,  // divideBy2. Not available for ADF4360-8 and ADF4360-9
+    0,  // divideBy2Select. Not available for ADF4360-8 and ADF4360-9
+    0,  // divideBy2. Not available for ADF4360-8 and ADF4360-9
     
     /* R Counter Latch */
     0,  // lockDetectPrecision;

@@ -136,10 +136,10 @@ void StartDefaultTask(void const * argument)
 
   HAL_GPIO_WritePin(TXPLL__CE_GPIO_Port, TXPLL__CE_Pin, GPIO_PIN_SET);
   if (ADF4360_Init(ADF4360_7)) {
-    ADF4360_SetFrequency(873000000ULL);
-    while (HAL_GPIO_ReadPin(TXPLL_LD_GPIO_Port, TXPLL_LD_Pin) == GPIO_PIN_RESET) {
-      osDelay(1U);
-    }
+    ADF4360_SetFrequency(436500000ULL);
+    // while (HAL_GPIO_ReadPin(TXPLL_LD_GPIO_Port, TXPLL_LD_Pin) == GPIO_PIN_RESET) {
+    //   osDelay(1U);
+    // }
   }
 
   /* Infinite loop */
