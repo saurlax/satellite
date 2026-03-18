@@ -126,31 +126,6 @@ int main(void)
   MX_USART3_UART_Init();
   MX_RAMECC_Init();
   /* USER CODE BEGIN 2 */
-  /* Initialize ADF7021 transceiver */
-  // ADF7021_Config_t adf7021_cfg = {
-  //     .hspi = &hspi2,                      /* SPI2 for register access */
-  //     .en_port = ADF7021_EN_GPIO_Port,     /* EN (CE) pin on GPIOD */
-  //     .en_pin = ADF7021_EN_Pin,            /* GPIO pin for enable */
-      
-  //     .xtal_freq_hz = 16000000,            /* 16 MHz TCXO */
-  //     .xtal_type = 1,                      /* 1 = External TCXO (not internal crystal) */
-      
-  //     .center_freq_hz = 144000000,         /* 144 MHz center frequency (adjust as needed) */
-  //     .ref_freq_hz = 16000000,             /* Reference frequency = XTAL */
-      
-  //     .data_rate_bps = 1200,               /* 1200 bps data rate */
-      
-  //     .mod_type = ADF7021_MOD_2FSK,        /* 2-FSK modulation */
-  //     .freq_deviation = 2400,              /* 2.4 kHz frequency deviation */
-      
-  //     .tx_power = ADF7021_PA_POWER_0dBm,  /* 0 dBm TX power */
-      
-  //     .if_filter_bw = 12500                /* 12.5 kHz IF filter bandwidth */
-  // };
-  
-  // if (ADF7021_Init(&adf7021_cfg) != HAL_OK) {
-  //     Error_Handler();
-  // }
 
   /* USER CODE END 2 */
 

@@ -1,596 +1,731 @@
 #include "adf7021.h"
-#include "string.h"
 
-/* ============================================================
- * Helper Functions
- * ============================================================ */
+#include <math.h>
+#include <string.h>
 
-/**
- * @brief  Microsecond delay using HAL_Delay
- * @param  us: Microseconds to delay
- * @note   For delays < 1ms, uses HAL_Delay(1) as minimum granularity
- */
-static void ADF7021_DelayUs(uint32_t us)
+#define ADF7021_ADDR_MASK             0x0FU
+#define ADF7021_REG_DATA_MASK         0xFFFFFFF0UL
+
+static uint32_t adf7021_timeout_ms(const ADF7021_Config_t *config)
 {
-    if (us >= 1000) {
-        HAL_Delay(us / 1000);
+    if ((config == NULL) || (config->spi_timeout_ms == 0U)) {
+        return ADF7021_SPI_TIMEOUT_DEFAULT_MS;
+    }
+
+    return config->spi_timeout_ms;
+}
+
+static uint32_t adf7021_pfd_hz(const ADF7021_Config_t *config)
+{
+    uint32_t r_div;
+    uint32_t pfd;
+
+    r_div = (config->r_counter == 0U) ? 1U : config->r_counter;
+    pfd = config->xtal_hz / r_div;
+
+    if (config->xtal_doubler) {
+        pfd *= 2U;
+    }
+
+    return pfd;
+}
+
+static uint32_t adf7021_round_u32(double x)
+{
+    if (x <= 0.0) {
+        return 0U;
+    }
+
+    return (uint32_t)(x + 0.5);
+}
+
+static uint32_t adf7021_clamp_u32(uint32_t val, uint32_t min_v, uint32_t max_v)
+{
+    if (val < min_v) {
+        return min_v;
+    }
+
+    if (val > max_v) {
+        return max_v;
+    }
+
+    return val;
+}
+
+static uint8_t adf7021_symbol_den(const ADF7021_Config_t *config)
+{
+    switch (config->tx_modulation) {
+    case ADF7021_MOD_4FSK:
+    case ADF7021_MOD_RCOS_4FSK:
+        return 2U;
+    default:
+        return 1U;
+    }
+}
+
+static uint32_t adf7021_effective_fdev_hz(const ADF7021_Config_t *config)
+{
+    if (config->freq_deviation_hz != 0U) {
+        return config->freq_deviation_hz;
+    }
+
+    if ((config->mod_index_x10 == 0U) || (config->data_rate_bps == 0U)) {
+        return 0U;
+    }
+
+    return (uint32_t)(((uint64_t)config->mod_index_x10 * (uint64_t)config->data_rate_bps) / 20ULL);
+}
+
+static HAL_StatusTypeDef adf7021_write_word(ADF7021_Config_t *config, uint32_t word)
+{
+    uint8_t tx[4];
+
+    if ((config == NULL) || (config->hspi == NULL)) {
+        return HAL_ERROR;
+    }
+
+    tx[0] = (uint8_t)((word >> 24) & 0xFFU);
+    tx[1] = (uint8_t)((word >> 16) & 0xFFU);
+    tx[2] = (uint8_t)((word >> 8) & 0xFFU);
+    tx[3] = (uint8_t)(word & 0xFFU);
+
+    return HAL_SPI_Transmit(config->hspi, tx, 4U, adf7021_timeout_ms(config));
+}
+
+static HAL_StatusTypeDef adf7021_program_common_sys_regs(ADF7021_Config_t *config)
+{
+    uint32_t r1;
+
+    r1 = 0U;
+    r1 |= ((uint32_t)(config->vco_external_inductor ? 1U : 0U) & 0x1U) << 25;
+    r1 |= ((uint32_t)config->vco_adjust & 0x3U) << 23;
+    r1 |= ((uint32_t)config->vco_bias & 0xFU) << 19;
+    r1 |= ((uint32_t)(config->rf_divide_by_2 ? 1U : 0U) & 0x1U) << 18;
+    r1 |= (1U << 17); /* VCO enable */
+    r1 |= ((uint32_t)config->cp_current & 0x3U) << 15;
+    r1 |= ((uint32_t)config->xtal_bias & 0x3U) << 13;
+    r1 |= ((uint32_t)(config->xosc_enable ? 1U : 0U) & 0x1U) << 12;
+    r1 |= ((uint32_t)(config->xtal_doubler ? 1U : 0U) & 0x1U) << 11;
+    r1 |= (7U << 7); /* CLKOUT divide */
+    r1 |= ((uint32_t)adf7021_clamp_u32(config->r_counter, 1U, 7U) & 0x7U) << 4;
+
+    if (ADF7021_WriteReg(config, ADF7021_REG_1, r1) != HAL_OK) {
+        return HAL_ERROR;
+    }
+
+    config->cached.reg15 = (7U << 17); /* CLK_MUX = TxRxCLK for SPI visibility */
+    return ADF7021_WriteReg(config, ADF7021_REG_15, config->cached.reg15);
+}
+
+static uint32_t adf7021_build_r0(const ADF7021_Config_t *config, uint32_t rf_hz, ADF7021_Mode_e mode)
+{
+    uint32_t pfd;
+    double divider;
+    uint32_t n_int;
+    uint32_t n_frac;
+    uint32_t reg;
+
+    pfd = adf7021_pfd_hz(config);
+    if (pfd == 0U) {
+        return 0U;
+    }
+
+    if (config->rf_divide_by_2) {
+        divider = (2.0 * (double)rf_hz) / (double)pfd;
     } else {
-        HAL_Delay(1); /* Minimum 1ms granularity */
+        divider = (double)rf_hz / (double)pfd;
     }
+
+    n_int = adf7021_clamp_u32((uint32_t)floor(divider), 23U, 255U);
+    n_frac = adf7021_clamp_u32(adf7021_round_u32((divider - floor(divider)) * 32768.0), 0U, 32767U);
+
+    reg = 0U;
+    reg |= ((uint32_t)config->muxout & 0x7U) << 29;
+    reg |= ((uint32_t)(config->uart_mode ? 1U : 0U) & 0x1U) << 28;
+    reg |= ((uint32_t)mode & 0x1U) << 27;
+    reg |= (n_int & 0xFFU) << 19;
+    reg |= (n_frac & 0x7FFFU) << 4;
+
+    return reg;
 }
 
-/* ============================================================
- * Register Write/Read Functions
- * ============================================================ */
-
-/**
- * @brief  Write a 32-bit register to ADF7021 via SPI
- * @param  config: Pointer to ADF7021 configuration structure
- * @param  reg_num: Register number (0-9)
- * @param  reg_data: 32-bit register data (already shifted by reg_num)
- * @retval HAL_StatusTypeDef
- * 
- * @note   Register format: [7:5]=reg_num, [24:0]=register data
- */
-HAL_StatusTypeDef ADF7021_WriteReg(ADF7021_Config_t *config, uint8_t reg_num, uint32_t reg_data)
+static uint32_t adf7021_build_r2_tx(const ADF7021_Config_t *config)
 {
-    if (!config || !config->hspi) {
-        return HAL_ERROR;
-    }
-    
-    /* Ensure reg_num is in valid range */
-    if (reg_num > 9) {
-        return HAL_ERROR;
-    }
-    
-    /* Construct SPI frame: MSByte first */
-    uint8_t tx_buffer[4];
-    uint32_t spi_data = ADF7021_REG_ADDR(reg_num) | (reg_data & 0x01FFFFFF);
-    
-    tx_buffer[0] = (spi_data >> 24) & 0xFF;
-    tx_buffer[1] = (spi_data >> 16) & 0xFF;
-    tx_buffer[2] = (spi_data >> 8) & 0xFF;
-    tx_buffer[3] = spi_data & 0xFF;
-    
-    return HAL_SPI_Transmit(config->hspi, tx_buffer, 4, 100);
-}
+    uint32_t pfd;
+    uint32_t fdev_hz;
+    uint32_t tx_dev;
+    uint32_t reg;
 
-/**
- * @brief  Read a 32-bit register from ADF7021 via SPI
- * @param  config: Pointer to ADF7021 configuration structure
- * @retval 32-bit register data
- * 
- * @note   SPI read requires clocking out 4 bytes to retrieve the status word
- */
-uint32_t ADF7021_ReadReg(ADF7021_Config_t *config)
-{
-    if (!config || !config->hspi) {
-        return 0;
-    }
-    
-    uint8_t rx_buffer[4] = {0};
-    uint8_t tx_buffer[4] = {0xFF, 0xFF, 0xFF, 0xFF};
-    
-    HAL_SPI_TransmitReceive(config->hspi, tx_buffer, rx_buffer, 4, 100);
-    
-    return ((uint32_t)rx_buffer[0] << 24) | 
-           ((uint32_t)rx_buffer[1] << 16) | 
-           ((uint32_t)rx_buffer[2] << 8) | 
-           (uint32_t)rx_buffer[3];
-}
+    pfd = adf7021_pfd_hz(config);
+    fdev_hz = adf7021_effective_fdev_hz(config);
 
-/* ============================================================
- * Hardware Reset and Enable
- * ============================================================ */
-
-/**
- * @brief  Hardware enable (CE pin high) - initializes regulator
- * @param  config: Pointer to ADF7021 configuration structure
- * @retval HAL_StatusTypeDef
- */
-static HAL_StatusTypeDef ADF7021_HardwareEnable(ADF7021_Config_t *config)
-{
-    if (!config || !config->en_port) {
-        return HAL_ERROR;
-    }
-    
-    /* Pull EN (CE) pin high to enable regulator */
-    HAL_GPIO_WritePin(config->en_port, config->en_pin, GPIO_PIN_SET);
-    
-    /* Wait for regulator to stabilize (~50us) */
-    ADF7021_DelayUs(50);
-    
-    return HAL_OK;
-}
-
-/* ============================================================
- * Calibration Functions
- * ============================================================ */
-
-/**
- * @brief  Perform IF Filter Coarse Calibration
- * @param  config: Pointer to ADF7021 configuration structure
- * @retval HAL_StatusTypeDef
- * 
- * @note   Calibrates the IF filter to compensate for manufacturing tolerances
- *         Must be performed after PLL configuration
- */
-static HAL_StatusTypeDef ADF7021_CalibrationIFCoarse(ADF7021_Config_t *config)
-{
-    /* Configure Register 5 with IF filter divider for coarse calibration */
-    /* IF_FILTER_DIVIDER = XTAL_FREQ_HZ / 50000 (target 50kHz) */
-    uint32_t if_filter_div = config->xtal_freq_hz / 50000UL;
-    if (if_filter_div > 511) {
-        if_filter_div = 511; /* 9-bit limit */
-    }
-    
-    /* Register 5: [8:0] = IF_FILTER_DIVIDER */
-    uint32_t reg5_data = if_filter_div & 0x1FF;
-    
-    /* Trigger coarse calibration by setting IF_COARSE_CAL bit (R5_DB4) */
-    reg5_data |= (1U << 24); /* Bit 24 in the 25-bit register data */
-    
-    HAL_StatusTypeDef status = ADF7021_WriteReg(config, 5, reg5_data);
-    if (status != HAL_OK) {
-        return status;
-    }
-    
-    /* Wait for calibration to complete (~5ms) */
-    ADF7021_DelayUs(5000);
-    
-    return HAL_OK;
-}
-
-/**
- * @brief  Perform IF Filter Fine Calibration
- * @param  config: Pointer to ADF7021 configuration structure
- * @retval HAL_StatusTypeDef
- * 
- * @note   Optional, for higher precision. Must be after coarse calibration.
- */
-static HAL_StatusTypeDef ADF7021_CalibrationIFFine(ADF7021_Config_t *config)
-{
-    /* Configure Register 6 for fine calibration */
-    /* In practice, fine calibration uses similar divider settings */
-    uint32_t if_filter_div = config->xtal_freq_hz / 100000UL; /* 100kHz target for fine */
-    if (if_filter_div > 511) {
-        if_filter_div = 511;
-    }
-    
-    uint32_t reg6_data = if_filter_div & 0x1FF;
-    
-    /* Trigger fine calibration by setting IF_FINE_CAL bit */
-    reg6_data |= (1U << 24);
-    
-    HAL_StatusTypeDef status = ADF7021_WriteReg(config, 6, reg6_data);
-    if (status != HAL_OK) {
-        return status;
-    }
-    
-    /* Wait for calibration to complete */
-    ADF7021_DelayUs(5000);
-    
-    return HAL_OK;
-}
-
-/**
- * @brief  Perform Image Rejection Calibration
- * @param  config: Pointer to ADF7021 configuration structure
- * @retval HAL_StatusTypeDef
- * 
- * @note   Significantly improves image rejection ratio (>56dB)
- */
-static HAL_StatusTypeDef ADF7021_CalibrationImageRejection(ADF7021_Config_t *config)
-{
-    /* Start IR calibration by setting IR_CAL_START bit in Register 1 */
-    /* This is typically bit 24 (IR_CAL_START) */
-    uint32_t reg1_ir_cal = (1U << 24);
-    
-    HAL_StatusTypeDef status = ADF7021_WriteReg(config, 1, reg1_ir_cal);
-    if (status != HAL_OK) {
-        return status;
-    }
-    
-    /* Wait for IR calibration to complete (~10ms) */
-    ADF7021_DelayUs(10000);
-    
-    return HAL_OK;
-}
-
-/* ============================================================
- * Core Configuration Functions
- * ============================================================ */
-
-/**
- * @brief  Calculate PLL divider (N) from center frequency
- * @param  center_freq: Center frequency in Hz
- * @param  ref_freq: Reference frequency in Hz
- * @retval Calculated N value
- * 
- * @note   N = (Center_Freq_kHz * 2) / (Ref_Freq_kHz)
- *         Typically Ref_Freq = XTAL_FREQ or 2*XTAL_FREQ
- */
-static uint16_t ADF7021_CalculatePLLDiv(uint32_t center_freq, uint32_t ref_freq)
-{
-    /* Simplified calculation; adjust based on actual frequency plan */
-    uint32_t n_value = (center_freq * 2) / ref_freq;
-    
-    if (n_value > 8191) {
-        n_value = 8191; /* 13-bit limit */
-    }
-    
-    return (uint16_t)n_value;
-}
-
-/**
- * @brief  Calculate frequency deviation divider
- * @param  freq_dev: Frequency deviation in Hz
- * @param  ref_freq: Reference frequency in Hz
- * @retval Calculated divider value
- */
-static uint16_t ADF7021_CalculateFreqDev(uint32_t freq_dev, uint32_t ref_freq)
-{
-    /* FREQ_DEVIATION = (Desired_Deviation_Hz / Ref_Freq_Hz) * 2^12 */
-    uint32_t div_value = (freq_dev * 4096) / ref_freq;
-    
-    if (div_value > 4095) {
-        div_value = 4095; /* 12-bit limit */
-    }
-    
-    return (uint16_t)div_value;
-}
-
-/**
- * @brief  Configure Register 0 (PLL and Tx/Rx Mode)
- * @param  config: Pointer to ADF7021 configuration structure
- * @retval HAL_StatusTypeDef
- */
-static HAL_StatusTypeDef ADF7021_ConfigReg0(ADF7021_Config_t *config)
-{
-    uint16_t n_value = ADF7021_CalculatePLLDiv(config->center_freq_hz, config->ref_freq_hz);
-    
-    /* Register 0: [12:0] = N divider, [13] = Tx/Rx mode (1=Tx, 0=Rx) */
-    uint32_t reg0_data = n_value & 0x1FFF;
-    
-    /* Default to RX mode; can be changed later with ADF7021_SetTxMode */
-    reg0_data |= (0 << 13); /* 0 = RX mode */
-    
-    return ADF7021_WriteReg(config, 0, reg0_data);
-}
-
-/**
- * @brief  Configure Register 1 (VCO, Oscillator, Calibration)
- * @param  config: Pointer to ADF7021 configuration structure
- * @retval HAL_StatusTypeDef
- */
-static HAL_StatusTypeDef ADF7021_ConfigReg1(ADF7021_Config_t *config)
-{
-    uint32_t reg1_data = 0;
-    
-    /* [24] = MUXOUT_SELECT (0 = regulator ready) - for monitoring */
-    /* [23] = MUXOUT_LEVEL */
-    
-    /* [17] = VCO_ENABLE (1 = enabled) */
-    reg1_data |= (1U << 17);
-    
-    /* [16] = OSC_ENABLE (depends on TCXO configuration) */
-    if (config->xtal_type == 1) {
-        /* External TCXO: disable internal oscillator */
-        reg1_data &= ~(1U << 16);
+    if ((pfd == 0U) || (fdev_hz == 0U)) {
+        tx_dev = 0U;
+    } else if (config->rf_divide_by_2) {
+        tx_dev = adf7021_round_u32(((double)fdev_hz * 131072.0) / (double)pfd);
     } else {
-        /* Crystal: enable internal oscillator */
-        reg1_data |= (1U << 16);
+        tx_dev = adf7021_round_u32(((double)fdev_hz * 65536.0) / (double)pfd);
     }
-    
-    /* [15:14] = XTAL_BIAS (00 = normal, for crystal) */
-    /* [13:11] = XTAL_RANGE (depends on crystal frequency) */
-    /* For TCXO, these are typically set based on input frequency */
-    
-    return ADF7021_WriteReg(config, 1, reg1_data);
+
+    tx_dev = adf7021_clamp_u32(tx_dev, 0U, 0x1FFU);
+
+    reg = 0U;
+    reg |= (tx_dev & 0x1FFU) << 19;
+    reg |= ((uint32_t)config->tx_power & 0x3FU) << 13;
+    reg |= ((uint32_t)config->pa_bias & 0x3U) << 11;
+    reg |= ((uint32_t)config->pa_ramp & 0x7U) << 8;
+    reg |= ((uint32_t)(config->pa_enable ? 1U : 0U) & 0x1U) << 7;
+    reg |= ((uint32_t)config->tx_modulation & 0x7U) << 4;
+
+    return reg;
 }
 
-/**
- * @brief  Configure Register 2 (Modulation, Frequency Deviation, TX Power)
- * @param  config: Pointer to ADF7021 configuration structure
- * @retval HAL_StatusTypeDef
- */
-static HAL_StatusTypeDef ADF7021_ConfigReg2(ADF7021_Config_t *config)
+static void adf7021_build_rx_clocks(ADF7021_Config_t *config, uint32_t *dem_div_out, uint32_t *cdr_div_out)
 {
-    uint32_t reg2_data = 0;
-    
-    uint16_t freq_dev = ADF7021_CalculateFreqDev(config->freq_deviation, config->ref_freq_hz);
-    
-    /* [21:20] = MOD_TYPE (00=2FSK, 01=4FSK, 10=GFSK, 11=OOK) */
-    reg2_data |= ((uint32_t)config->mod_type & 0x3) << 20;
-    
-    /* [19:8] = FREQ_DEVIATION (12 bits) */
-    reg2_data |= (freq_dev & 0xFFF) << 8;
-    
-    /* [5:3] = TX_POWER (PA level) */
-    reg2_data |= (0U << 3);
-    
-    return ADF7021_WriteReg(config, 2, reg2_data);
-}
+    uint32_t dem_div_best;
+    uint32_t cdr_div_best;
+    uint32_t residual_best;
+    uint32_t pfd;
+    uint32_t fdev_hz;
+    uint32_t i;
 
-/**
- * @brief  Configure Register 3 (Data Rate Clock)
- * @param  config: Pointer to ADF7021 configuration structure
- * @retval HAL_StatusTypeDef
- */
-static HAL_StatusTypeDef ADF7021_ConfigReg3(ADF7021_Config_t *config)
-{
-    /* CLK_DIV = XTAL_FREQ / (2 * DATA_RATE) */
-    uint32_t clk_div = config->xtal_freq_hz / (2 * config->data_rate_bps);
-    
-    if (clk_div > 65535) {
-        clk_div = 65535; /* 16-bit limit */
+    dem_div_best = 1U;
+    cdr_div_best = 1U;
+    residual_best = 0xFFFFFFFFUL;
+
+    pfd = adf7021_pfd_hz(config);
+    fdev_hz = adf7021_effective_fdev_hz(config);
+
+    for (i = 1U; i <= 15U; i++) {
+        double dem_clk;
+        double symbol_rate;
+        uint32_t cdr_div;
+        uint32_t disc_bw;
+        double data_real;
+        uint32_t target;
+        uint32_t residual;
+        double k;
+
+        dem_clk = (double)config->xtal_hz / (double)i;
+        symbol_rate = (double)config->data_rate_bps / (double)adf7021_symbol_den(config);
+        cdr_div = adf7021_round_u32(dem_clk / (symbol_rate * 32.0));
+
+        if ((cdr_div == 0U) || (cdr_div > 255U)) {
+            continue;
+        }
+
+        if (fdev_hz == 0U) {
+            disc_bw = 1U;
+        } else {
+            if ((config->rx_demod == ADF7021_DEMOD_4FSK) && (fdev_hz != 0U)) {
+                k = 100000.0 / (4.0 * (double)fdev_hz);
+            } else {
+                k = 100000.0 / (double)fdev_hz;
+            }
+
+            disc_bw = adf7021_round_u32((k * dem_clk) / 400000.0);
+        }
+
+        if ((disc_bw == 0U) || (disc_bw > 660U)) {
+            continue;
+        }
+
+        data_real = dem_clk / ((double)cdr_div * 32.0);
+        if (adf7021_symbol_den(config) == 2U) {
+            data_real *= 2.0;
+        }
+
+        target = config->data_rate_bps;
+        residual = (target > (uint32_t)data_real) ? (target - (uint32_t)data_real) : ((uint32_t)data_real - target);
+
+        if (residual < residual_best) {
+            residual_best = residual;
+            dem_div_best = i;
+            cdr_div_best = cdr_div;
+        }
     }
-    
-    /* Register 3: [15:0] = CLK_DIV */
-    uint32_t reg3_data = clk_div & 0xFFFF;
-    
-    return ADF7021_WriteReg(config, 3, reg3_data);
-}
 
-/**
- * @brief  Configure Register 4 (RX Demodulator)
- * @param  config: Pointer to ADF7021 configuration structure
- * @retval HAL_StatusTypeDef
- */
-static HAL_StatusTypeDef ADF7021_ConfigReg4(ADF7021_Config_t *config)
-{
-    uint32_t reg4_data = 0;
-    
-    /* [24:21] = SLICER_THRESHOLD (usually 0x8 = mid-range) */
-    reg4_data |= (0x8 << 21);
-    
-    /* [20] = DEMOD_AGC_ENABLE (1 = enabled) */
-    reg4_data |= (1U << 20);
-    
-    /* [19:16] = SLICER_MODE (depends on modulation) */
-    /* For FSK modes, typically 0xA (slicer on DISCRIM) */
-    reg4_data |= (0xA << 16);
-    
-    return ADF7021_WriteReg(config, 4, reg4_data);
-}
-
-/**
- * @brief  Configure Register 5 (IF Filter) - already done in calibration
- * @param  config: Pointer to ADF7021 configuration structure
- * @retval HAL_StatusTypeDef
- */
-static HAL_StatusTypeDef ADF7021_ConfigReg5(ADF7021_Config_t *config)
-{
-    /* IF Filter bandwidth calculation */
-    /* For standard IF filter: BWSEL = XTAL / (2 * DESIRED_BW) */
-    uint32_t bw_sel = config->xtal_freq_hz / (2 * config->if_filter_bw);
-    
-    if (bw_sel > 511) {
-        bw_sel = 511; /* 9-bit limit */
+    if (dem_div_out != NULL) {
+        *dem_div_out = dem_div_best;
     }
-    
-    uint32_t reg5_data = bw_sel & 0x1FF;
-    
-    return ADF7021_WriteReg(config, 5, reg5_data);
+
+    if (cdr_div_out != NULL) {
+        *cdr_div_out = cdr_div_best;
+    }
+
+    (void)pfd;
 }
 
-/**
- * @brief  Configure Register 9 (AGC)
- * @param  config: Pointer to ADF7021 configuration structure
- * @retval HAL_StatusTypeDef
- */
-static HAL_StatusTypeDef ADF7021_ConfigReg9(ADF7021_Config_t *config)
+static uint32_t adf7021_build_r3(const ADF7021_Config_t *config, uint32_t dem_div, uint32_t cdr_div)
 {
-    uint32_t reg9_data = 0;
-    
-    /* [24] = AGC_ENABLE (1 = enabled) */
-    reg9_data |= (1U << 24);
-    
-    /* [23:20] = AGC_ATTACK_TIME */
-    /* [19:16] = AGC_DECAY_TIME */
-    /* Use default values: attack = 0xE, decay = 0x9 */
-    reg9_data |= (0xE << 20);
-    reg9_data |= (0x9 << 16);
-    
-    return ADF7021_WriteReg(config, 9, reg9_data);
+    uint32_t seq_div;
+    uint32_t seq_clk;
+    uint32_t agc_div;
+    uint32_t bbos_div;
+    uint32_t reg;
+
+    seq_div = adf7021_round_u32((double)config->xtal_hz / 100000.0);
+    seq_div = adf7021_clamp_u32(seq_div, 1U, 255U);
+
+    seq_clk = config->xtal_hz / seq_div;
+    agc_div = adf7021_round_u32((double)seq_clk / 10000.0);
+    agc_div = adf7021_clamp_u32(agc_div, 1U, 127U);
+
+    bbos_div = adf7021_round_u32((double)config->xtal_hz / 1500000.0);
+    if (bbos_div <= 4U) {
+        bbos_div = 4U;
+    } else if (bbos_div <= 8U) {
+        bbos_div = 8U;
+    } else if (bbos_div <= 16U) {
+        bbos_div = 16U;
+    } else {
+        bbos_div = 32U;
+    }
+
+    reg = 0U;
+    reg |= (agc_div & 0x3FU) << 26;
+    reg |= (seq_div & 0xFFU) << 18;
+    reg |= (cdr_div & 0xFFU) << 10;
+    reg |= (dem_div & 0x0FU) << 6;
+
+    switch (bbos_div) {
+    case 4U:
+        reg |= 0U << 4;
+        break;
+    case 8U:
+        reg |= 1U << 4;
+        break;
+    case 16U:
+        reg |= 2U << 4;
+        break;
+    default:
+        reg |= 3U << 4;
+        break;
+    }
+
+    return reg;
 }
 
-/* ============================================================
- * Main Initialization Function
- * ============================================================ */
-
-/**
- * @brief  Initialize ADF7021 transceiver
- * @param  config: Pointer to ADF7021 configuration structure
- *         Must contain valid SPI handle, GPIO info, and frequency parameters
- * @retval HAL_StatusTypeDef
- * 
- * @note   Initialization sequence:
- *         1. Hardware enable (EN pin high)
- *         2. Register 1 configuration (clock source, VCO)
- *         3. Register 0-9 configuration (PLL, modulation, data rate, etc.)
- *         4. IF Filter Coarse Calibration
- *         5. IF Filter Fine Calibration
- *         6. Image Rejection Calibration
- */
-HAL_StatusTypeDef ADF7021_Init(ADF7021_Config_t *config)
+static uint32_t adf7021_build_r4(const ADF7021_Config_t *config, uint32_t dem_div)
 {
-    HAL_StatusTypeDef status = HAL_OK;
-    
-    if (!config || !config->hspi || !config->en_port) {
+    uint32_t fdev_hz;
+    double dem_clk;
+    double k;
+    uint32_t disc_bw;
+    uint32_t post_bw;
+    uint32_t rx_invert;
+    uint32_t dot_product;
+    uint32_t reg;
+
+    fdev_hz = adf7021_effective_fdev_hz(config);
+    dem_clk = (double)config->xtal_hz / (double)dem_div;
+
+    if (fdev_hz == 0U) {
+        disc_bw = 1U;
+        dot_product = 1U;
+        rx_invert = 0U;
+    } else {
+        uint32_t k_int;
+
+        if (config->rx_demod == ADF7021_DEMOD_4FSK) {
+            k = 100000.0 / (4.0 * (double)fdev_hz);
+            k_int = adf7021_round_u32(k);
+            disc_bw = adf7021_round_u32((k * dem_clk) / 400000.0);
+            if ((k_int & 1U) != 0U) {
+                dot_product = 1U;
+                rx_invert = (((k_int + 1U) / 2U) & 1U) ? 2U : 0U;
+            } else {
+                dot_product = 0U;
+                rx_invert = ((k_int / 2U) & 1U) ? 2U : 0U;
+            }
+        } else {
+            k = 100000.0 / (double)fdev_hz;
+            k_int = adf7021_round_u32(k);
+            disc_bw = adf7021_round_u32((k * dem_clk) / 400000.0);
+            if ((k_int & 1U) != 0U) {
+                dot_product = 1U;
+                rx_invert = (((k_int + 1U) / 2U) & 1U) ? 2U : 0U;
+            } else {
+                dot_product = 0U;
+                rx_invert = ((k_int / 2U) & 1U) ? 2U : 0U;
+            }
+        }
+    }
+
+    if (config->rx_demod == ADF7021_DEMOD_4FSK) {
+        double symbol_rate;
+        symbol_rate = (double)config->data_rate_bps / 2.0;
+        post_bw = adf7021_round_u32((1.6 * symbol_rate * 3.141592654 * 2048.0) / dem_clk);
+    } else if (config->rx_demod == ADF7021_DEMOD_3FSK) {
+        post_bw = adf7021_round_u32(((double)config->data_rate_bps * 3.141592654 * 2048.0) / dem_clk);
+    } else {
+        post_bw = adf7021_round_u32((0.75 * (double)config->data_rate_bps * 3.141592654 * 2048.0) / dem_clk);
+    }
+
+    disc_bw = adf7021_clamp_u32(disc_bw, 1U, 660U);
+    post_bw = adf7021_clamp_u32(post_bw, 1U, 1023U);
+
+    reg = 0U;
+    reg |= ((uint32_t)config->rx_if_bw & 0x3U) << 30;
+    reg |= (post_bw & 0x3FFU) << 20;
+    reg |= (disc_bw & 0x3FFU) << 10;
+    reg |= (rx_invert & 0x3U) << 8;
+    reg |= (dot_product & 0x1U) << 7;
+    reg |= ((uint32_t)config->rx_demod & 0x7U) << 4;
+
+    return reg;
+}
+
+static uint32_t adf7021_build_r5(const ADF7021_Config_t *config, bool do_coarse_cal)
+{
+    uint32_t div;
+    uint32_t reg;
+
+    div = adf7021_round_u32((double)config->xtal_hz / 50000.0);
+    div = adf7021_clamp_u32(div, 1U, 511U);
+
+    reg = 0U;
+    reg |= (div & 0x1FFU) << 5;
+    reg |= ((uint32_t)(do_coarse_cal ? 1U : 0U) & 0x1U) << 4;
+
+    return reg;
+}
+
+static uint32_t adf7021_build_r6(const ADF7021_Config_t *config)
+{
+    uint32_t upper;
+    uint32_t lower;
+    uint32_t dwell;
+    uint32_t reg;
+
+    upper = adf7021_round_u32((double)config->xtal_hz / (131500.0 * 2.0));
+    lower = adf7021_round_u32((double)config->xtal_hz / (65800.0 * 2.0));
+
+    upper = adf7021_clamp_u32(upper, 1U, 255U);
+    lower = adf7021_clamp_u32(lower, 1U, 255U);
+
+    dwell = 10U;
+
+    reg = 0U;
+    reg |= (dwell & 0x7FU) << 21;
+    reg |= (upper & 0xFFU) << 13;
+    reg |= (lower & 0xFFU) << 5;
+    reg |= 1U << 4; /* Enable fine cal path */
+
+    return reg;
+}
+
+static uint32_t adf7021_build_r9(void)
+{
+    uint32_t reg;
+
+    reg = 0U;
+    reg |= (0U << 28); /* mixer linearity default */
+    reg |= (0U << 26); /* LNA current default */
+    reg |= (0U << 25); /* LNA mode default */
+    reg |= (0U << 24); /* filter current low */
+    reg |= (1U << 22); /* filter gain = 24 */
+    reg |= (1U << 20); /* LNA gain = 10 */
+    reg |= (0U << 18); /* AGC auto */
+    reg |= (70U & 0x7FU) << 11;
+    reg |= (30U & 0x7FU) << 4;
+
+    return reg;
+}
+
+static uint32_t adf7021_build_r10(const ADF7021_Config_t *config)
+{
+    uint32_t max_range;
+    uint32_t pfd;
+    uint32_t scale;
+    uint32_t reg;
+
+    pfd = adf7021_pfd_hz(config);
+    if (pfd == 0U) {
+        return 0U;
+    }
+
+    scale = adf7021_round_u32((16777216.0 * 500.0) / (double)config->xtal_hz);
+    scale = adf7021_clamp_u32(scale, 1U, 4095U);
+
+    max_range = adf7021_round_u32((double)config->afc_range_hz / 500.0);
+    if (config->rf_divide_by_2) {
+        max_range *= 2U;
+    }
+    max_range = adf7021_clamp_u32(max_range, 1U, 255U);
+
+    reg = 0U;
+    reg |= (max_range & 0xFFU) << 24;
+    reg |= ((uint32_t)config->afc_kp & 0x7U) << 21;
+    reg |= ((uint32_t)config->afc_ki & 0xFU) << 17;
+    reg |= (scale & 0xFFFU) << 5;
+    reg |= ((uint32_t)(config->afc_enable ? 1U : 0U) & 0x1U) << 4;
+
+    (void)pfd;
+    return reg;
+}
+
+static uint32_t adf7021_build_r11(const ADF7021_Config_t *config)
+{
+    uint32_t reg;
+
+    reg = 0U;
+    reg |= (config->sync_word & 0xFFFFFFUL) << 8;
+    reg |= ((uint32_t)config->sync_err_tol & 0x3U) << 6;
+    reg |= ((uint32_t)config->sync_len & 0x3U) << 4;
+
+    return reg;
+}
+
+static uint32_t adf7021_build_r12(void)
+{
+    uint32_t reg;
+
+    reg = 0U;
+    reg |= (255U << 8);  /* packet length */
+    reg |= (1U << 6);    /* SWD mode */
+    reg |= (1U << 4);    /* lock threshold mode */
+
+    return reg;
+}
+
+HAL_StatusTypeDef ADF7021_WriteReg(ADF7021_Config_t *config, ADF7021_Reg_e reg, uint32_t value_no_addr)
+{
+    uint32_t word;
+
+    if ((config == NULL) || (config->hspi == NULL)) {
         return HAL_ERROR;
     }
-    
-    /* Step 1: Hardware Enable (CE pin high) - enables regulator */
-    status = ADF7021_HardwareEnable(config);
-    if (status != HAL_OK) {
-        return status;
+
+    if ((uint8_t)reg > (uint8_t)ADF7021_REG_15) {
+        return HAL_ERROR;
     }
-    
-    /* Step 2: Configure Register 1 (Clock source for TCXO) */
-    status = ADF7021_ConfigReg1(config);
-    if (status != HAL_OK) {
-        return status;
+
+    word = (value_no_addr & ADF7021_REG_DATA_MASK) | ((uint32_t)reg & ADF7021_ADDR_MASK);
+    return adf7021_write_word(config, word);
+}
+
+HAL_StatusTypeDef ADF7021_Readback(ADF7021_Config_t *config, uint8_t readback_sel, uint16_t *value)
+{
+    HAL_StatusTypeDef st;
+    uint32_t r7;
+    uint8_t tx[4] = {0xFFU, 0xFFU, 0xFFU, 0xFFU};
+    uint8_t rx[4] = {0U, 0U, 0U, 0U};
+
+    if ((config == NULL) || (config->hspi == NULL) || (value == NULL)) {
+        return HAL_ERROR;
     }
-    
-    ADF7021_DelayUs(100);
-    
-    /* Step 3: Configure core registers (order matters) */
-    status = ADF7021_ConfigReg0(config);
-    if (status != HAL_OK) return status;
-    
-    status = ADF7021_ConfigReg2(config);
-    if (status != HAL_OK) return status;
-    
-    status = ADF7021_ConfigReg3(config);
-    if (status != HAL_OK) return status;
-    
-    status = ADF7021_ConfigReg4(config);
-    if (status != HAL_OK) return status;
-    
-    status = ADF7021_ConfigReg5(config);
-    if (status != HAL_OK) return status;
-    
-    status = ADF7021_ConfigReg9(config);
-    if (status != HAL_OK) return status;
-    
-    ADF7021_DelayUs(100);
-    
-    /* Step 4: IF Filter Coarse Calibration */
-    status = ADF7021_CalibrationIFCoarse(config);
-    if (status != HAL_OK) {
-        return status;
+
+    r7 = 0U;
+    r7 |= 1U << 8; /* readback enabled */
+    r7 |= ((uint32_t)readback_sel & 0x3U) << 6;
+
+    st = ADF7021_WriteReg(config, ADF7021_REG_7, r7);
+    if (st != HAL_OK) {
+        return st;
     }
-    
-    /* Step 5: IF Filter Fine Calibration */
-    status = ADF7021_CalibrationIFFine(config);
-    if (status != HAL_OK) {
-        return status;
+
+    st = HAL_SPI_TransmitReceive(config->hspi, tx, rx, 4U, adf7021_timeout_ms(config));
+    if (st != HAL_OK) {
+        return st;
     }
-    
-    /* Step 6: Image Rejection Calibration */
-    status = ADF7021_CalibrationImageRejection(config);
-    if (status != HAL_OK) {
-        return status;
-    }
-    
-    ADF7021_DelayUs(100);
-    
+
+    *value = (uint16_t)(((uint16_t)rx[2] << 8) | rx[3]);
     return HAL_OK;
 }
 
-/* ============================================================
- * Mode and Control Functions
- * ============================================================ */
-
-/**
- * @brief  Set ADF7021 to TX mode
- * @param  config: Pointer to ADF7021 configuration structure
- * @retval HAL_StatusTypeDef
- */
-HAL_StatusTypeDef ADF7021_SetTxMode(ADF7021_Config_t *config)
+void ADF7021_DefaultConfig(ADF7021_Config_t *config, SPI_HandleTypeDef *hspi)
 {
-    if (!config) {
-        return HAL_ERROR;
+    if (config == NULL) {
+        return;
     }
-    
-    /* Read Register 0, set bit 13 (TX/RX mode) to 1 for TX */
-    uint16_t n_value = ADF7021_CalculatePLLDiv(config->center_freq_hz, config->ref_freq_hz);
-    uint32_t reg0_data = (n_value & 0x1FFF) | (1U << 13); /* 1 = TX mode */
-    
-    return ADF7021_WriteReg(config, 0, reg0_data);
+
+    memset(config, 0, sizeof(*config));
+
+    config->hspi = hspi;
+    config->spi_timeout_ms = ADF7021_SPI_TIMEOUT_DEFAULT_MS;
+
+    config->xtal_hz = 12288000UL;
+    config->r_counter = 1U;
+    config->xtal_doubler = false;
+    config->xosc_enable = true;
+
+    config->vco_external_inductor = true;
+    config->rf_divide_by_2 = true;
+    config->vco_adjust = 1U;
+    config->vco_bias = 0xFU;
+    config->cp_current = 3U;
+    config->xtal_bias = 3U;
+
+    config->rx_freq_hz = 435000000UL;
+    config->tx_freq_hz = 435000000UL;
+    config->rx_if_hz = ADF7021_RX_IF_DEFAULT_HZ;
+
+    config->data_rate_bps = 9600UL;
+    config->freq_deviation_hz = 4800UL;
+    config->mod_index_x10 = 10U;
+
+    config->tx_modulation = ADF7021_MOD_GAUSSIAN_2FSK;
+    config->rx_demod = ADF7021_DEMOD_2FSK_CORR;
+    config->rx_if_bw = ADF7021_IFBW_12K5;
+
+    config->tx_power = 20U;
+    config->pa_bias = 3U;
+    config->pa_ramp = 7U;
+    config->pa_enable = true;
+
+    config->afc_enable = true;
+    config->afc_ki = 11U;
+    config->afc_kp = 4U;
+    config->afc_range_hz = 5000UL;
+
+    config->sync_word = 0x9A55E7UL;
+    config->sync_len = ADF7021_SYNC_LEN_24;
+    config->sync_err_tol = ADF7021_SYNC_ERR_1;
+
+    config->muxout = ADF7021_MUX_DIGITAL_LOCK_DETECT;
+    config->uart_mode = true;
+    config->mode = ADF7021_MODE_RX;
 }
 
-/**
- * @brief  Set ADF7021 to RX mode
- * @param  config: Pointer to ADF7021 configuration structure
- * @retval HAL_StatusTypeDef
- */
+HAL_StatusTypeDef ADF7021_RecalibrateIF(ADF7021_Config_t *config)
+{
+    HAL_StatusTypeDef st;
+
+    if (config == NULL) {
+        return HAL_ERROR;
+    }
+
+    st = ADF7021_WriteReg(config, ADF7021_REG_6, config->cached.reg6);
+    if (st != HAL_OK) {
+        return st;
+    }
+
+    st = ADF7021_WriteReg(config, ADF7021_REG_5, adf7021_build_r5(config, true));
+    if (st != HAL_OK) {
+        return st;
+    }
+
+    HAL_Delay(10U);
+    config->cached.reg5 = adf7021_build_r5(config, false);
+
+    return ADF7021_WriteReg(config, ADF7021_REG_5, config->cached.reg5);
+}
+
 HAL_StatusTypeDef ADF7021_SetRxMode(ADF7021_Config_t *config)
 {
-    if (!config) {
-        return HAL_ERROR;
-    }
-    
-    /* Read Register 0, set bit 13 (TX/RX mode) to 0 for RX */
-    uint16_t n_value = ADF7021_CalculatePLLDiv(config->center_freq_hz, config->ref_freq_hz);
-    uint32_t reg0_data = (n_value & 0x1FFF) | (0U << 13); /* 0 = RX mode */
-    
-    return ADF7021_WriteReg(config, 0, reg0_data);
-}
+    HAL_StatusTypeDef st;
 
-/**
- * @brief  Set TX Power Level
- * @param  config: Pointer to ADF7021 configuration structure
- * @param  power: Power level (0-7)
- * @retval HAL_StatusTypeDef
- */
-HAL_StatusTypeDef ADF7021_SetTxPower(ADF7021_Config_t *config, ADF7021_PALevel_e power)
-{
-    if (!config) {
+    if (config == NULL) {
         return HAL_ERROR;
     }
-    
-    config->tx_power = power;
-    
-    /* Re-configure Register 2 with new power level */
-    return ADF7021_ConfigReg2(config);
-}
 
-/**
- * @brief  Transmit data (placeholder for actual TX implementation)
- * @param  config: Pointer to ADF7021 configuration structure
- * @param  data: Pointer to data buffer
- * @param  length: Length of data
- * @retval HAL_StatusTypeDef
- * 
- * @note   This is a placeholder. Actual TX requires:
- *         - Setting TX mode via ADF7021_SetTxMode()
- *         - Feeding data bits to the serial data input (SDI) pin
- *         - Synchronizing with TX clock output
- */
-HAL_StatusTypeDef ADF7021_Transmit(ADF7021_Config_t *config, uint8_t *data, uint16_t length)
-{
-    if (!config || !data) {
-        return HAL_ERROR;
-    }
-    
-    /* TODO: Implement actual TX data transmission */
-    /* This typically involves:
-       - Switching to TX mode
-       - Feeding bits to SDI pin at the rate of the TX clock
-       - Waiting for transmission to complete
-    */
-    
+    st = ADF7021_WriteReg(config, ADF7021_REG_3, config->cached.reg3);
+    if (st != HAL_OK) return st;
+    st = ADF7021_WriteReg(config, ADF7021_REG_5, config->cached.reg5);
+    if (st != HAL_OK) return st;
+    st = ADF7021_WriteReg(config, ADF7021_REG_0, config->cached.reg0_rx);
+    if (st != HAL_OK) return st;
+    st = ADF7021_WriteReg(config, ADF7021_REG_4, config->cached.reg4);
+    if (st != HAL_OK) return st;
+
+    config->mode = ADF7021_MODE_RX;
     return HAL_OK;
 }
 
-/**
- * @brief  Receive data (placeholder for actual RX implementation)
- * @param  config: Pointer to ADF7021 configuration structure
- * @param  data: Pointer to data buffer
- * @param  length: Length of data to receive
- * @retval HAL_StatusTypeDef
- * 
- * @note   This is a placeholder. Actual RX requires:
- *         - Setting RX mode via ADF7021_SetRxMode()
- *         - Reading data bits from the serial data output (SDO) pin
- *         - Synchronizing with RX clock output
- *         - Monitoring sync word detection (SWD) pin
- */
-HAL_StatusTypeDef ADF7021_Receive(ADF7021_Config_t *config, uint8_t *data, uint16_t length)
+HAL_StatusTypeDef ADF7021_SetTxMode(ADF7021_Config_t *config)
 {
-    if (!config || !data) {
+    HAL_StatusTypeDef st;
+
+    if (config == NULL) {
         return HAL_ERROR;
     }
-    
-    /* TODO: Implement actual RX data reception */
-    /* This typically involves:
-       - Switching to RX mode
-       - Reading bits from SDO pin at the rate of the RX clock
-       - Monitoring for sync word detection (optional)
-       - Buffering received bits into bytes
-    */
-    
+
+    st = ADF7021_WriteReg(config, ADF7021_REG_2, config->cached.reg2_tx);
+    if (st != HAL_OK) return st;
+    st = ADF7021_WriteReg(config, ADF7021_REG_3, config->cached.reg3);
+    if (st != HAL_OK) return st;
+    st = ADF7021_WriteReg(config, ADF7021_REG_0, config->cached.reg0_tx);
+    if (st != HAL_OK) return st;
+
+    config->mode = ADF7021_MODE_TX;
     return HAL_OK;
+}
+
+HAL_StatusTypeDef ADF7021_SetTxPower(ADF7021_Config_t *config, uint8_t power)
+{
+    if (config == NULL) {
+        return HAL_ERROR;
+    }
+
+    config->tx_power = (uint8_t)adf7021_clamp_u32(power, 0U, 63U);
+    config->cached.reg2_tx = adf7021_build_r2_tx(config);
+
+    if (config->mode == ADF7021_MODE_TX) {
+        return ADF7021_WriteReg(config, ADF7021_REG_2, config->cached.reg2_tx);
+    }
+
+    return HAL_OK;
+}
+
+HAL_StatusTypeDef ADF7021_Init(ADF7021_Config_t *config)
+{
+    HAL_StatusTypeDef st;
+    uint32_t dem_div;
+    uint32_t cdr_div;
+    uint32_t rx_lo_hz;
+
+    if ((config == NULL) || (config->hspi == NULL) || (config->ce_port == NULL)) {
+        return HAL_ERROR;
+    }
+
+    if ((config->xtal_hz == 0U) || (config->data_rate_bps == 0U)) {
+        return HAL_ERROR;
+    }
+
+    HAL_GPIO_WritePin(config->ce_port, config->ce_pin, GPIO_PIN_SET);
+    HAL_Delay(1U);
+
+    st = adf7021_program_common_sys_regs(config);
+    if (st != HAL_OK) {
+        return st;
+    }
+
+    rx_lo_hz = (config->rx_freq_hz > config->rx_if_hz) ? (config->rx_freq_hz - config->rx_if_hz) : config->rx_freq_hz;
+
+    config->cached.reg0_rx = adf7021_build_r0(config, rx_lo_hz, ADF7021_MODE_RX);
+    config->cached.reg0_tx = adf7021_build_r0(config, config->tx_freq_hz, ADF7021_MODE_TX);
+    config->cached.reg2_tx = adf7021_build_r2_tx(config);
+
+    adf7021_build_rx_clocks(config, &dem_div, &cdr_div);
+    config->cached.reg3 = adf7021_build_r3(config, dem_div, cdr_div);
+    config->cached.reg4 = adf7021_build_r4(config, dem_div);
+    config->cached.reg5 = adf7021_build_r5(config, false);
+    config->cached.reg6 = adf7021_build_r6(config);
+    config->cached.reg9 = adf7021_build_r9();
+    config->cached.reg10 = adf7021_build_r10(config);
+    config->cached.reg11 = adf7021_build_r11(config);
+    config->cached.reg12 = adf7021_build_r12();
+
+    st = ADF7021_WriteReg(config, ADF7021_REG_3, config->cached.reg3);
+    if (st != HAL_OK) return st;
+    st = ADF7021_WriteReg(config, ADF7021_REG_4, config->cached.reg4);
+    if (st != HAL_OK) return st;
+    st = ADF7021_WriteReg(config, ADF7021_REG_5, config->cached.reg5);
+    if (st != HAL_OK) return st;
+    st = ADF7021_WriteReg(config, ADF7021_REG_9, config->cached.reg9);
+    if (st != HAL_OK) return st;
+    st = ADF7021_WriteReg(config, ADF7021_REG_10, config->cached.reg10);
+    if (st != HAL_OK) return st;
+    st = ADF7021_WriteReg(config, ADF7021_REG_11, config->cached.reg11);
+    if (st != HAL_OK) return st;
+    st = ADF7021_WriteReg(config, ADF7021_REG_12, config->cached.reg12);
+    if (st != HAL_OK) return st;
+
+    st = ADF7021_RecalibrateIF(config);
+    if (st != HAL_OK) {
+        return st;
+    }
+
+    return ADF7021_SetRxMode(config);
 }

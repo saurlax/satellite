@@ -28,10 +28,12 @@
 #include <stdio.h>
 
 #include "ADF4360.h"
+#include "adf7021.h"
 #include "aic3104.h"
 #include "i2c.h"
 #include "i2s.h"
 #include "iwdg.h"
+#include "spi.h"
 #include "source.h"
 #include "usart.h"
 
@@ -60,6 +62,7 @@
 #define AUDIO_FRAME_SAMPLES       240U
 
 static AIC3104_Config_t g_aic3104_cfg;
+static ADF7021_Config_t g_adf7021_cfg;
 static float g_iq_audio_buffer[AUDIO_FRAME_SAMPLES * 2U];
 static int16_t g_i2s_tx_stereo[AUDIO_FRAME_SAMPLES * 2U];
 
@@ -157,6 +160,17 @@ void StartDefaultTask(void const * argument)
     // }
   }
 
+  /* Initialize ADF7021 transceiver before codec setup */
+  ADF7021_DefaultConfig(&g_adf7021_cfg, &hspi2);
+  g_adf7021_cfg.ce_port = ADF7021_EN_GPIO_Port;
+  g_adf7021_cfg.ce_pin = ADF7021_EN_Pin;
+  g_adf7021_cfg.rx_freq_hz = 436500000UL;
+  g_adf7021_cfg.tx_freq_hz = 436500000UL;
+
+  if (ADF7021_Init(&g_adf7021_cfg) != HAL_OK) {
+    Error_Handler();
+  }
+
   /* Initialize AIC3104 codec */
   AIC3104_DefaultConfig(&g_aic3104_cfg, &hi2c1);
   g_aic3104_cfg.hi2s = &hi2s1;
@@ -169,6 +183,7 @@ void StartDefaultTask(void const * argument)
   g_aic3104_cfg.enable_hp = true;
   g_aic3104_cfg.enable_lineout = true;
   g_aic3104_cfg.enable_hpcom = true;
+  g_aic3104_cfg.output_common_mode = 0U;
 
   if (AIC3104_Init(&g_aic3104_cfg) != HAL_OK) {
     Error_Handler();
@@ -231,6 +246,7 @@ static void PrepareIqAudioFrame(void)
 static void DumpAic3104Regs(void)
 {
   const uint8_t regs[] = {
+    AIC3104_REG_HPOUT_SC,
     AIC3104_REG_DAC_PWR,
     AIC3104_REG_DACL1_TO_LLOPM,
     AIC3104_REG_DACR1_TO_RLOPM,
