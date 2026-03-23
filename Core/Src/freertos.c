@@ -130,7 +130,7 @@ void MX_FREERTOS_Init(void) {
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* definition and creation of watchdogTask */
-  osThreadDef(watchdogTask, StartWatchdogTask, osPriorityIdle, 0, 128);
+  osThreadDef(watchdogTask, StartWatchdogTask, osPriorityAboveNormal, 0, 128);
   watchdogTaskHandle = osThreadCreate(osThread(watchdogTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
