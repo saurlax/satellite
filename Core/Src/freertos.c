@@ -192,12 +192,14 @@ void StartDefaultTask(void const * argument)
   DumpAic3104Regs();
   PrepareIqAudioFrame();
 
+  if (HAL_I2S_Transmit_DMA(&hi2s1, (uint16_t *)g_i2s_tx_stereo, AUDIO_FRAME_SAMPLES * 2U) != HAL_OK) {
+    Error_Handler();
+  }
+
   /* Infinite loop */
   for(;;)
   {
-    if (HAL_I2S_Transmit(&hi2s1, (uint16_t *)g_i2s_tx_stereo, AUDIO_FRAME_SAMPLES * 2U, HAL_MAX_DELAY) != HAL_OK) {
-      Error_Handler();
-    }
+    osDelay(1000U);
   }
   /* USER CODE END StartDefaultTask */
 }

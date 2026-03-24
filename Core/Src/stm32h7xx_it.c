@@ -20,6 +20,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32h7xx_it.h"
+#include "i2s.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 /* USER CODE END Includes */
@@ -56,6 +57,7 @@
 
 /* External variables --------------------------------------------------------*/
 extern TIM_HandleTypeDef htim1;
+extern DMA_HandleTypeDef hdma_spi1_tx;
 
 /* USER CODE BEGIN EV */
 
@@ -171,6 +173,20 @@ void TIM1_UP_IRQHandler(void)
   /* USER CODE BEGIN TIM1_UP_IRQn 1 */
 
   /* USER CODE END TIM1_UP_IRQn 1 */
+}
+
+/**
+  * @brief This function handles DMA1 stream0 global interrupt.
+  */
+void DMA1_Stream0_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Stream0_IRQn 0 */
+
+  /* USER CODE END DMA1_Stream0_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_spi1_tx);
+  /* USER CODE BEGIN DMA1_Stream0_IRQn 1 */
+
+  /* USER CODE END DMA1_Stream0_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */
