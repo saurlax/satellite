@@ -164,7 +164,7 @@ void StartDefaultTask(void const * argument)
   ADF7021_DefaultConfig(&g_adf7021_cfg, &hspi2);
   g_adf7021_cfg.ce_port = ADF7021_EN_GPIO_Port;
   g_adf7021_cfg.ce_pin = ADF7021_EN_Pin;
-  g_adf7021_cfg.rx_freq_hz = 436500000UL;
+  g_adf7021_cfg.rx_freq_hz = 145000000UL;
   g_adf7021_cfg.tx_freq_hz = 436500000UL;
 
   if (ADF7021_Init(&g_adf7021_cfg) != HAL_OK) {

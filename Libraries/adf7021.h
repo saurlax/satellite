@@ -5,7 +5,7 @@
 #include <stdbool.h>
 
 #define ADF7021_SPI_TIMEOUT_DEFAULT_MS   100U
-#define ADF7021_RX_IF_DEFAULT_HZ         100000UL
+#define ADF7021_RX_IF_DEFAULT_HZ         20000UL
 
 typedef enum {
     ADF7021_REG_0 = 0U,

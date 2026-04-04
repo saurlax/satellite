@@ -561,7 +561,7 @@ void ADF7021_DefaultConfig(ADF7021_Config_t *config, SPI_HandleTypeDef *hspi)
     config->tx_freq_hz = 435000000UL;
     config->rx_if_hz = ADF7021_RX_IF_DEFAULT_HZ;
 
-    config->data_rate_bps = 9600UL;
+    config->data_rate_bps = 1200UL;
     config->freq_deviation_hz = 4800UL;
     config->mod_index_x10 = 10U;
 
