@@ -229,6 +229,16 @@ SECTIONS
   PROVIDE( __bss_start = __tbss_start );
   PROVIDE( __bss_size = __bss_end - __bss_start );
 
+  /* DMA1/DMA2 cannot access DTCM, so DMA buffers live in SRAM1/2/3. */
+  .dma_buffer (NOLOAD) : ALIGN(32)
+  {
+    _sdma_buffer = .;
+    *(.dma_buffer)
+    *(.dma_buffer*)
+    . = ALIGN(32);
+    _edma_buffer = .;
+  } >RAM_D2
+
   /* User_heap_stack section, used to check that there is enough RAM left */
   ._user_heap_stack (NOLOAD) :
   {
