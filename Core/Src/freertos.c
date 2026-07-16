@@ -26,6 +26,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <stdarg.h>
 
 #include "ADF4360.h"
 #include "adf7021.h"
@@ -33,6 +34,7 @@
 #include "i2c.h"
 #include "i2s.h"
 #include "iwdg.h"
+#include "ltc5599.h"
 #include "spi.h"
 #include "source.h"
 #include "usart.h"
@@ -63,6 +65,7 @@
 
 static AIC3104_Config_t g_aic3104_cfg;
 static ADF7021_Config_t g_adf7021_cfg;
+static LTC5599_Config_t g_ltc5599_cfg;
 static float g_iq_audio_buffer[AUDIO_FRAME_SAMPLES * 2U];
 static int16_t g_i2s_tx_stereo[AUDIO_FRAME_SAMPLES * 2U];
 
@@ -74,6 +77,8 @@ osThreadId watchdogTaskHandle;
 /* USER CODE BEGIN FunctionPrototypes */
 static void PrepareIqAudioFrame(void);
 static void DumpAic3104Regs(void);
+static void RunRfSmokeTest(void);
+static void UartPrintf(const char *fmt, ...);
 
 /* USER CODE END FunctionPrototypes */
 
@@ -151,14 +156,7 @@ void StartDefaultTask(void const * argument)
   /* USER CODE BEGIN StartDefaultTask */
   (void)argument;
   printf("printf via UART1 is ready\r\n");
-
-  HAL_GPIO_WritePin(TXPLL__CE_GPIO_Port, TXPLL__CE_Pin, GPIO_PIN_SET);
-  if (ADF4360_Init(ADF4360_7)) {
-    ADF4360_SetFrequency(436500000ULL);
-    // while (HAL_GPIO_ReadPin(TXPLL_LD_GPIO_Port, TXPLL_LD_Pin) == GPIO_PIN_RESET) {
-    //   osDelay(1U);
-    // }
-  }
+  RunRfSmokeTest();
 
   /* Initialize ADF7021 transceiver before codec setup */
   ADF7021_DefaultConfig(&g_adf7021_cfg, &hspi2);
@@ -271,6 +269,49 @@ static void DumpAic3104Regs(void)
       uint16_t tx_len = (len < (int)sizeof(msg)) ? (uint16_t)len : (uint16_t)(sizeof(msg) - 1U);
       (void)HAL_UART_Transmit(&huart1, (uint8_t *)msg, tx_len, 100U);
     }
+  }
+}
+
+static void RunRfSmokeTest(void)
+{
+  uint64_t actual_hz = 0ULL;
+  uint8_t reg0 = 0U;
+
+  HAL_GPIO_WritePin(TXPLL__CE_GPIO_Port, TXPLL__CE_Pin, GPIO_PIN_SET);
+
+  if (ADF4360_Init(ADF4360_7)) {
+    actual_hz = ADF4360_SetFrequency(436500000ULL);
+    UartPrintf("ADF4360-7 set %lu Hz, LD=%u\r\n",
+               (unsigned long)actual_hz,
+               (unsigned int)ADF4360_DefaultLockDetect());
+  } else {
+    UartPrintf("ADF4360-7 init fail\r\n");
+  }
+
+  LTC5599_DefaultConfig(&g_ltc5599_cfg, &hspi4);
+  g_ltc5599_cfg.cs_port = LTC5599_CS_GPIO_Port;
+  g_ltc5599_cfg.cs_pin = LTC5599_CS_Pin;
+
+  if (LTC5599_Probe(&g_ltc5599_cfg, &reg0) == HAL_OK) {
+    UartPrintf("LTC5599 reg0 = 0x%02X\r\n", reg0);
+  } else {
+    UartPrintf("LTC5599 probe fail\r\n");
+  }
+}
+
+static void UartPrintf(const char *fmt, ...)
+{
+  char msg[96];
+  va_list ap;
+  int len;
+
+  va_start(ap, fmt);
+  len = vsnprintf(msg, sizeof(msg), fmt, ap);
+  va_end(ap);
+
+  if (len > 0) {
+    uint16_t tx_len = (len < (int)sizeof(msg)) ? (uint16_t)len : (uint16_t)(sizeof(msg) - 1U);
+    (void)HAL_UART_Transmit(&huart1, (uint8_t *)msg, tx_len, 100U);
   }
 }
 

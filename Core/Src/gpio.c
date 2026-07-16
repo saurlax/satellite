@@ -56,10 +56,10 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOC, TXPLL__EN_Pin|PA_EN_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(TXPLL__CE_GPIO_Port, TXPLL__CE_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, TXPLL__CE_Pin|TXPLL_LE_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(TXPLL__ENE13_GPIO_Port, TXPLL__ENE13_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOE, LTC5599_CS_Pin|TXPLL__ENE13_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOD, AIC3104_RST_Pin|ADF7021_SWD_Pin|ADF7021_EN_Pin|GPIO_PIN_2
@@ -87,12 +87,12 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(TEMP_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : TXPLL__CE_Pin */
-  GPIO_InitStruct.Pin = TXPLL__CE_Pin;
+  /*Configure GPIO pins : TXPLL__CE_Pin TXPLL_LE_Pin */
+  GPIO_InitStruct.Pin = TXPLL__CE_Pin|TXPLL_LE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(TXPLL__CE_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : FAULT3V3_Pin */
   GPIO_InitStruct.Pin = FAULT3V3_Pin;
@@ -100,12 +100,12 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(FAULT3V3_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : TXPLL__ENE13_Pin */
-  GPIO_InitStruct.Pin = TXPLL__ENE13_Pin;
+  /*Configure GPIO pins : LTC5599_CS_Pin TXPLL__ENE13_Pin */
+  GPIO_InitStruct.Pin = LTC5599_CS_Pin|TXPLL__ENE13_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(TXPLL__ENE13_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PB13 */
   GPIO_InitStruct.Pin = GPIO_PIN_13;

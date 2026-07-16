@@ -48,6 +48,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Libraries/aic3104.c
     Libraries/adf7021.c
     Libraries/ADF4360.c
+    Libraries/ltc5599.c
     Libraries/Communication.c
     Libraries/source.c
     Libraries/TIME.c

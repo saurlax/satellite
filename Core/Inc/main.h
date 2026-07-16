@@ -65,10 +65,14 @@ void Error_Handler(void);
 #define TEMP_GPIO_Port GPIOA
 #define TXPLL__CE_Pin GPIO_PIN_1
 #define TXPLL__CE_GPIO_Port GPIOA
+#define TXPLL_LE_Pin GPIO_PIN_4
+#define TXPLL_LE_GPIO_Port GPIOA
 #define FAULT3V3_Pin GPIO_PIN_7
 #define FAULT3V3_GPIO_Port GPIOE
 #define TXPLL__ENE13_Pin GPIO_PIN_13
 #define TXPLL__ENE13_GPIO_Port GPIOE
+#define LTC5599_CS_Pin GPIO_PIN_4
+#define LTC5599_CS_GPIO_Port GPIOE
 #define AIC3104_RST_Pin GPIO_PIN_13
 #define AIC3104_RST_GPIO_Port GPIOD
 #define PA_EN_Pin GPIO_PIN_7

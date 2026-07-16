@@ -1,293 +1,363 @@
-/***************************************************************************//**
- *   @file   ADF4360.c
- *   @brief  Implementation of ADF4360 Driver.
- *   @author Dan Nechita
-********************************************************************************
- * Copyright 2012(c) Analog Devices, Inc.
- *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *  - Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  - Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *  - Neither the name of Analog Devices, Inc. nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *  - The use of this software may or may not infringe the patent rights
- *    of one or more patent holders.  This license does not release you
- *    from the requirement that you obtain separate licenses from these
- *    patent holders to use this software.
- *  - Use of the software either in source or binary form, must be run
- *    on or directly connected to an Analog Devices Inc. component.
- *
- * THIS SOFTWARE IS PROVIDED BY ANALOG DEVICES "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, NON-INFRINGEMENT,
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL ANALOG DEVICES BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, INTELLECTUAL PROPERTY RIGHTS, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
-********************************************************************************
- *   SVN Revision: 768
-*******************************************************************************/
+#include "ADF4360.h"
 
-/******************************************************************************/
-/***************************** Include Files **********************************/
-/******************************************************************************/
-#include "ADF4360.h"		// ADF4360 definitions.
-#include "ADF4360_cfg.h"    // ADF4360_cfg definitions.
-#include "Communication.h"	// Communication definitions.
-#include "TIME.h"           // TIME definitions.
+#include "main.h"
+#include "spi.h"
+#include <string.h>
 
-/******************************************************************************/
-/************************ Variables Definitions *******************************/
-/******************************************************************************/
-unsigned char ver         = 0;
-unsigned char prescaleVal = 8;
-unsigned long regR        = 0;
-unsigned long regCtrl     = 0;
-unsigned long regN        = 0;
+#define ADF4360_TIMEOUT_DEFAULT_MS 100U
+#define ADF4360_MAX_PFD_HZ         8000000UL
 
-/***************************************************************************//**
- * @brief Initialize the device.
- *
- * @param ver - AD4360 version.
- *                      Example: 0 - ADF4360-0
- *                               1 - ADF4360-1
- *                               ...
- *                               8 - ADF4360-8
- *                               9 - ADF4360-9
- *
- * @return status - Result of the initialization procedure.
- *					Example: 0x0 - SPI peripheral was not initialized.
- *				  			 0x1 - SPI peripheral is initialized.
-*******************************************************************************/
+#define ADF4360_CTRL_PRESCALE(x)         (((uint32_t)(x) & 0x3UL) << 22)
+#define ADF4360_CTRL_PWR_DWN(x)          (((uint32_t)(x) & 0x3UL) << 20)
+#define ADF4360_CTRL_CURRENT1(x)         (((uint32_t)(x) & 0x7UL) << 17)
+#define ADF4360_CTRL_CURRENT2(x)         (((uint32_t)(x) & 0x7UL) << 14)
+#define ADF4360_CTRL_OUT_PWR_LVL(x)      (((uint32_t)(x) & 0x3UL) << 12)
+#define ADF4360_CTRL_MTLD                (1UL << 11)
+#define ADF4360_CTRL_CP_GAIN             (1UL << 10)
+#define ADF4360_CTRL_CP_THREE_STATE      (1UL << 9)
+#define ADF4360_CTRL_PHASE_DETECT_POL(x) (((uint32_t)((x) ? 1U : 0U)) << 8)
+#define ADF4360_CTRL_MUXOUT(x)           (((uint32_t)(x) & 0x7UL) << 5)
+#define ADF4360_CTRL_COUNTER_RESET       (1UL << 4)
+#define ADF4360_CTRL_CORE_POWER(x)       (((uint32_t)(x) & 0x3UL) << 2)
+
+#define ADF4360_N_CNT_DIVIDE_2_SELECT    (1UL << 23)
+#define ADF4360_N_CNT_DIVIDE_2           (1UL << 22)
+#define ADF4360_N_CNT_CP_GAIN            (1UL << 21)
+#define ADF4360_N_CNT_B_COUNTER(x)       (((uint32_t)(x) & 0x1FFFUL) << 8)
+#define ADF4360_N_CNT_A_COUNTER(x)       (((uint32_t)(x) & 0x1FUL) << 2)
+
+#define ADF4360_R_CNT_BAND_CLK(x)        (((uint32_t)(x) & 0x3UL) << 20)
+#define ADF4360_R_CNT_LD_PRECISION       (1UL << 18)
+#define ADF4360_R_CNT_ANTIBACKLASH(x)    (((uint32_t)(x) & 0x3UL) << 16)
+#define ADF4360_R_CNT_REF_COUNTER(x)     (((uint32_t)(x) & 0x3FFFUL) << 2)
+
+static const ADF4360_PartSpec_t adf4360_specs[] = {
+    {2400000000ULL, 2725000000ULL, 300000000UL, 32U},
+    {2050000000ULL, 2450000000ULL, 300000000UL, 32U},
+    {1850000000ULL, 2150000000ULL, 300000000UL, 32U},
+    {1600000000ULL, 1950000000ULL, 300000000UL, 32U},
+    {1450000000ULL, 1750000000ULL, 300000000UL, 32U},
+    {1200000000ULL, 1400000000ULL, 300000000UL, 32U},
+    {1050000000ULL, 1250000000ULL, 300000000UL, 32U},
+    {350000000ULL,  1800000000ULL, 300000000UL, 16U},
+    {65000000ULL,   400000000ULL,  400000000UL, 1U},
+    {65000000ULL,   400000000ULL,  400000000UL, 1U},
+};
+
+static ADF4360_Config_t g_adf4360_default;
+
+static uint32_t adf4360_timeout_ms(const ADF4360_Config_t *config)
+{
+    return ((config != NULL) && (config->spi_timeout_ms != 0U)) ?
+               config->spi_timeout_ms :
+               ADF4360_TIMEOUT_DEFAULT_MS;
+}
+
+static uint64_t adf4360_clamp_u64(uint64_t value, uint64_t min_value, uint64_t max_value)
+{
+    if (value < min_value) return min_value;
+    if (value > max_value) return max_value;
+    return value;
+}
+
+static uint32_t adf4360_round_div_u64(uint64_t numerator, uint32_t denominator)
+{
+    if (denominator == 0U) {
+        return 0U;
+    }
+
+    return (uint32_t)((numerator + ((uint64_t)denominator / 2ULL)) / (uint64_t)denominator);
+}
+
+static uint16_t adf4360_tune_r_counter(uint32_t ref_in_hz)
+{
+    uint16_t r = 1U;
+
+    while ((r < 0x3FFFU) && ((ref_in_hz / (uint32_t)r) > ADF4360_MAX_PFD_HZ)) {
+        r++;
+    }
+
+    return r;
+}
+
+static uint8_t adf4360_band_bits(uint32_t pfd_hz)
+{
+    uint8_t divider = 1U;
+
+    while ((divider < 8U) && ((pfd_hz / divider) > 1000000UL)) {
+        divider = (uint8_t)(divider * 2U);
+    }
+
+    switch (divider) {
+    case 1U:
+        return 0U;
+    case 2U:
+        return 1U;
+    case 4U:
+        return 2U;
+    default:
+        return 3U;
+    }
+}
+
+static uint32_t adf4360_build_control(const ADF4360_Settings_t *settings)
+{
+    uint32_t reg = 0U;
+
+    reg |= ADF4360_CTRL_PWR_DWN(settings->power_down_mode);
+    reg |= ADF4360_CTRL_CURRENT1(settings->current_setting_1);
+    reg |= ADF4360_CTRL_CURRENT2(settings->current_setting_2);
+    reg |= ADF4360_CTRL_OUT_PWR_LVL(settings->output_power_level);
+    reg |= settings->mute_till_lock_detect ? ADF4360_CTRL_MTLD : 0U;
+    reg |= settings->charge_pump_gain ? ADF4360_CTRL_CP_GAIN : 0U;
+    reg |= settings->charge_pump_three_state ? ADF4360_CTRL_CP_THREE_STATE : 0U;
+    reg |= ADF4360_CTRL_PHASE_DETECT_POL(settings->phase_detector_positive);
+    reg |= ADF4360_CTRL_MUXOUT(settings->muxout);
+    reg |= ADF4360_CTRL_CORE_POWER(settings->core_power_level);
+
+    return reg;
+}
+
+static uint32_t adf4360_build_r(const ADF4360_Settings_t *settings)
+{
+    uint32_t reg = 0U;
+
+    reg |= settings->lock_detect_five_cycles ? ADF4360_R_CNT_LD_PRECISION : 0U;
+    reg |= ADF4360_R_CNT_ANTIBACKLASH(settings->antibacklash_width);
+
+    return reg;
+}
+
+static uint32_t adf4360_build_n(const ADF4360_Settings_t *settings)
+{
+    uint32_t reg = 0U;
+
+    reg |= settings->divide_by_2_select ? ADF4360_N_CNT_DIVIDE_2_SELECT : 0U;
+    reg |= settings->divide_by_2 ? ADF4360_N_CNT_DIVIDE_2 : 0U;
+    reg |= settings->charge_pump_gain ? ADF4360_N_CNT_CP_GAIN : 0U;
+
+    return reg;
+}
+
+void ADF4360_DefaultConfig(ADF4360_Config_t *config, SPI_HandleTypeDef *hspi)
+{
+    if (config == NULL) {
+        return;
+    }
+
+    memset(config, 0, sizeof(*config));
+    config->hspi = hspi;
+    config->le_port = GPIOA;
+    config->le_pin = GPIO_PIN_4;
+    config->ce_port = TXPLL__CE_GPIO_Port;
+    config->ce_pin = TXPLL__CE_Pin;
+    config->enable_port = TXPLL__ENE13_GPIO_Port;
+    config->enable_pin = TXPLL__ENE13_Pin;
+    config->lock_port = TXPLL_LD_GPIO_Port;
+    config->lock_pin = TXPLL_LD_Pin;
+    config->spi_timeout_ms = ADF4360_TIMEOUT_DEFAULT_MS;
+    config->part = ADF4360_7;
+
+    config->settings.ref_in_hz = 25000000UL;
+    config->settings.power_down_mode = ADF4360_PWR_NORMAL_OPERATION;
+    config->settings.current_setting_1 = 7U;
+    config->settings.current_setting_2 = 7U;
+    config->settings.output_power_level = ADF4360_OUT_POWER_11_0;
+    config->settings.mute_till_lock_detect = false;
+    config->settings.charge_pump_gain = false;
+    config->settings.charge_pump_three_state = false;
+    config->settings.phase_detector_positive = true;
+    config->settings.muxout = ADF4360_MUX_DIGITAL_LD;
+    config->settings.core_power_level = ADF4360_CORE_POWER_5;
+    config->settings.divide_by_2_select = false;
+    config->settings.divide_by_2 = false;
+    config->settings.lock_detect_five_cycles = false;
+    config->settings.antibacklash_width = 0U;
+}
+
+HAL_StatusTypeDef ADF4360_WriteConfig(ADF4360_Config_t *config, uint32_t data)
+{
+    uint8_t tx[3];
+    HAL_StatusTypeDef st;
+
+    if ((config == NULL) || (config->hspi == NULL) || (config->le_port == NULL)) {
+        return HAL_ERROR;
+    }
+
+    tx[0] = (uint8_t)((data >> 16) & 0xFFU);
+    tx[1] = (uint8_t)((data >> 8) & 0xFFU);
+    tx[2] = (uint8_t)(data & 0xFFU);
+
+    HAL_GPIO_WritePin(config->le_port, config->le_pin, GPIO_PIN_RESET);
+    st = HAL_SPI_Transmit(config->hspi, tx, sizeof(tx), adf4360_timeout_ms(config));
+    HAL_GPIO_WritePin(config->le_port, config->le_pin, GPIO_PIN_SET);
+
+    return st;
+}
+
+HAL_StatusTypeDef ADF4360_InitConfig(ADF4360_Config_t *config)
+{
+    HAL_StatusTypeDef st;
+
+    if ((config == NULL) || (config->part >= (uint8_t)(sizeof(adf4360_specs) / sizeof(adf4360_specs[0])))) {
+        return HAL_ERROR;
+    }
+
+    if (config->ce_port != NULL) {
+        HAL_GPIO_WritePin(config->ce_port, config->ce_pin, GPIO_PIN_SET);
+    }
+    if (config->enable_port != NULL) {
+        HAL_GPIO_WritePin(config->enable_port, config->enable_pin, GPIO_PIN_SET);
+    }
+    if (config->le_port != NULL) {
+        HAL_GPIO_WritePin(config->le_port, config->le_pin, GPIO_PIN_SET);
+    }
+
+    config->cached_r = adf4360_build_r(&config->settings);
+    config->cached_control = adf4360_build_control(&config->settings);
+    config->cached_n = adf4360_build_n(&config->settings);
+
+    st = ADF4360_WriteConfig(config, ADF4360_REG_R_COUNTER | config->cached_r);
+    if (st != HAL_OK) return st;
+    st = ADF4360_WriteConfig(config, ADF4360_REG_CONTROL | config->cached_control);
+    if (st != HAL_OK) return st;
+    HAL_Delay(10U);
+    return ADF4360_WriteConfig(config, ADF4360_REG_N_COUNTER | config->cached_n);
+}
+
+HAL_StatusTypeDef ADF4360_SetFrequencyConfig(ADF4360_Config_t *config,
+                                             uint64_t frequency_hz,
+                                             uint64_t *actual_hz)
+{
+    const ADF4360_PartSpec_t *spec;
+    uint64_t vco_hz;
+    uint8_t prescaler = 8U;
+    uint16_t r_counter;
+    uint32_t pfd_hz;
+    uint32_t ratio;
+    uint16_t a = 0U;
+    uint16_t b = 0U;
+    uint8_t band;
+    HAL_StatusTypeDef st;
+
+    if ((config == NULL) || (config->part >= (uint8_t)(sizeof(adf4360_specs) / sizeof(adf4360_specs[0]))) ||
+        (config->settings.ref_in_hz == 0U)) {
+        return HAL_ERROR;
+    }
+
+    spec = &adf4360_specs[config->part];
+    vco_hz = adf4360_clamp_u64(frequency_hz, spec->vco_min_hz, spec->vco_max_hz);
+
+    if (config->part > ADF4360_7) {
+        prescaler = 1U;
+    } else {
+        while ((prescaler < spec->max_prescaler) && ((vco_hz / prescaler) > spec->counters_max_hz)) {
+            prescaler = (uint8_t)(prescaler * 2U);
+        }
+    }
+
+    r_counter = adf4360_tune_r_counter(config->settings.ref_in_hz);
+    pfd_hz = config->settings.ref_in_hz / (uint32_t)r_counter;
+    ratio = adf4360_round_div_u64(vco_hz, pfd_hz);
+
+    if (prescaler == 1U) {
+        b = (uint16_t)ratio;
+    } else {
+        b = (uint16_t)(ratio / prescaler);
+        a = (uint16_t)(ratio % prescaler);
+        while ((a > b) && (r_counter < 0x3FFFU)) {
+            r_counter++;
+            pfd_hz = config->settings.ref_in_hz / (uint32_t)r_counter;
+            ratio = adf4360_round_div_u64(vco_hz, pfd_hz);
+            b = (uint16_t)(ratio / prescaler);
+            a = (uint16_t)(ratio % prescaler);
+        }
+    }
+
+    band = adf4360_band_bits(pfd_hz);
+
+    st = ADF4360_WriteConfig(config,
+                             ADF4360_REG_R_COUNTER |
+                                 config->cached_r |
+                                 ADF4360_R_CNT_BAND_CLK(band) |
+                                 ADF4360_R_CNT_REF_COUNTER(r_counter));
+    if (st != HAL_OK) return st;
+
+    st = ADF4360_WriteConfig(config,
+                             ADF4360_REG_CONTROL |
+                                 config->cached_control |
+                                 ADF4360_CTRL_PRESCALE(prescaler / 16U));
+    if (st != HAL_OK) return st;
+
+    HAL_Delay(10U);
+
+    st = ADF4360_WriteConfig(config,
+                             ADF4360_REG_N_COUNTER |
+                                 config->cached_n |
+                                 ADF4360_N_CNT_B_COUNTER(b) |
+                                 ADF4360_N_CNT_A_COUNTER(a));
+    if (st != HAL_OK) return st;
+
+    config->last_frequency_hz = (uint64_t)(((uint32_t)b * (uint32_t)prescaler) + (uint32_t)a) * (uint64_t)pfd_hz;
+    if (actual_hz != NULL) {
+        *actual_hz = config->last_frequency_hz;
+    }
+
+    return HAL_OK;
+}
+
+HAL_StatusTypeDef ADF4360_PowerConfig(ADF4360_Config_t *config, bool power_on)
+{
+    uint32_t reg;
+
+    if (config == NULL) {
+        return HAL_ERROR;
+    }
+
+    reg = (config->cached_control & ~ADF4360_CTRL_PWR_DWN(3U)) |
+          ADF4360_CTRL_PWR_DWN(power_on ? ADF4360_PWR_NORMAL_OPERATION : ADF4360_PWR_SYNCH_POWER_DOWN);
+    return ADF4360_WriteConfig(config, ADF4360_REG_CONTROL | reg);
+}
+
+GPIO_PinState ADF4360_ReadLockDetect(const ADF4360_Config_t *config)
+{
+    if ((config == NULL) || (config->lock_port == NULL)) {
+        return GPIO_PIN_RESET;
+    }
+
+    return HAL_GPIO_ReadPin(config->lock_port, config->lock_pin);
+}
+
 unsigned char ADF4360_Init(unsigned char adf4360Version)
 {
-	unsigned char status = 0x0;
-    
-	/* Initialize SPI communication. */
-    status = 1;
-    /* Initialize timer. */
-    TIME_Init();
-    /* Store the version of the device in use. */
-    ver = adf4360Version;
-    /* Initialize ADF4360 registers. */
-    regR = ADF4360_R_CNT_LD_PRECISION * ADF4360_st.lockDetectPrecision | 
-           ADF4360_R_CNT_ANTIBACKLASH(ADF4360_st.antiBacklash);   
-    ADF4360_Write(ADF4360_REG_R_COUNTER | regR);
-    regCtrl = ADF4360_CTRL_PWR_DWN(ADF4360_st.powerDownMode)|
-              ADF4360_CTRL_CURRENT1(ADF4360_st.currentSetting1) |
-              ADF4360_CTRL_CURRENT2(ADF4360_st.currentSetting2) |
-              ADF4360_CTRL_OUT_PWR_LVL(ADF4360_st.outPowerLevel) | 
-              ADF4360_CTRL_MTLD * ADF4360_st.muteTillLd | 
-              ADF4360_CTRL_CP_GAIN * ADF4360_st.cpGain | 
-              ADF4360_CTRL_CP_THREE_STATE * ADF4360_st.cpThreeState | 
-              ADF4360_CTRL_PHASE_DETECT_POL(ADF4360_st.phaseDetectPol) | 
-              ADF4360_CTRL_MUXOUT(ADF4360_st.muxControl) | 
-              ADF4360_CTRL_CORE_POWER(ADF4360_st.corePowerLevel);
-    ADF4360_Write(ADF4360_REG_CONTROL | regCtrl);
-    /* Recommended Interval Between Control Latch and N Counter Latch writes. */
-    TIME_DelayMs(10);
-    regN =   ADF4360_N_CNT_DIVIDE_2_SELECT * ADF4360_st.divideBy2Select |
-             ADF4360_N_CNT_DIVIDE_2 * ADF4360_st.divideBy2;
-    ADF4360_Write(ADF4360_REG_N_COUNTER | regN);
-    
-	return(status);
+    ADF4360_DefaultConfig(&g_adf4360_default, &hspi3);
+    g_adf4360_default.part = adf4360Version;
+
+    return (ADF4360_InitConfig(&g_adf4360_default) == HAL_OK) ? 1U : 0U;
 }
 
-/***************************************************************************//**
- * @brief Write data into a register.
- *
- * @param data - Data value to write.
- *
- * @return None.
-*******************************************************************************/
 void ADF4360_Write(unsigned long data)
 {
-	unsigned char slaveDeviceId = 1;
-    unsigned char spiWord[3]    = {0, 0, 0};
-  
-	spiWord[0] = ((data & 0xFF0000) >> 16);
-	spiWord[1] = ((data & 0x00FF00) >> 8);
-	spiWord[2] = ((data & 0x0000FF) >> 0);
-	SPI_Write(slaveDeviceId, spiWord, 3);
+    (void)ADF4360_WriteConfig(&g_adf4360_default, (uint32_t)data);
 }
 
-/***************************************************************************//**
- * @brief Powers down or powers up the device.
- *
- * @param powerMode - Power option.
- *                    Example: 0 - powers down the device;
- *                             1 - power up the device.
- *
- * @return None.
-*******************************************************************************/
 void ADF4360_Power(unsigned char powerMode)
 {
-    if(powerMode)
-    {
-        ADF4360_Write(ADF4360_REG_CONTROL |
-                      regCtrl | 
-                      ADF4360_CTRL_PWR_DWN(ADF4360_PWR_NORMAL_OPERATION));
-    }
-    else
-    {
-        ADF4360_Write(ADF4360_REG_CONTROL |
-                      regCtrl |
-                      ADF4360_CTRL_PWR_DWN(ADF4360_PWR_SYNCH_POWER_DOWN));
-    }
+    (void)ADF4360_PowerConfig(&g_adf4360_default, powerMode != 0U);
 }
 
-/***************************************************************************//**
- * @brief Increases the R counter value until the maximum frequency of PFD is
- *        greater than PFD frequency.
- *
- * @param rCounter - R counter value.
- *
- * @return rCounter - modified R counter value.
-*******************************************************************************/
-unsigned short ADF4360_TuneRcounter(unsigned short rCounter)
-{
-	unsigned long frequencyPfd = 0;	// PFD frequency
-	
-	do
-	{
-		rCounter++;
-		frequencyPfd = ADF4360_st.refIn / rCounter;
-	}
-	while(frequencyPfd > ADF4360_MAX_FREQ_PFD);
-    
-    return rCounter;
-}
-
-/***************************************************************************//**
- * @brief Selects a value for Band Select Clock Divider that is used to divide 
- *        the output of the R counter until a frequency below 1 MHz is obtained.
- *
- * @param frequencyPfd - Frequency value of Phase Frequency Detector.
- *
- * @return bsc - Band Select Clock value.
-*******************************************************************************/
-unsigned short ADF4360_GetBandDivider(unsigned long frequencyPfd)
-{
-	unsigned long dividedRfreq = 0;
-	unsigned char bsc          = 1;
-    
-    /* The R counter output is used as the clock for the band select logic and 
-       should not exceed 1 MHz. */
-	
-    dividedRfreq = frequencyPfd;
-    while((dividedRfreq > 1000000) && (bsc < 8))
-	{
-        bsc *= 2;
-		dividedRfreq = frequencyPfd / bsc;
-	}
-    
-    return bsc;
-}
-
-/***************************************************************************//**
- * @brief Sets the ADF4360 frequency.
- *
- * @param frequency - The desired frequency value.
- *
- * @return calculatedFrequency - The actual frequency value that was set.
-*******************************************************************************/
 unsigned long long ADF4360_SetFrequency(unsigned long long frequency)
 {
-    unsigned long long vcoFrequency        = 0; // VCO frequency
-    unsigned long      frequencyPfd        = 0;	// PFD frequency
-    unsigned long      freqRatio           = 0; // VCOfreq / PFDfreq
-    unsigned long long calculatedFrequency = 0; // Actual VCO frequency
-    unsigned short	   rCounterValue 	   = 0; // Value for R counter
-    unsigned short     a                   = 0; // Value for A counter
-    unsigned short     b                   = 0; // Value for B counter
-    unsigned char      band                = 0; // Band Select Clock Value
-    unsigned char      bandBits            = 0; // Band Select Clock Bits
-    
-    /* Force "frequency" parameter to fit in the Output frequency range. */
-    if(frequency <= ADF4360_part[ver].vcoMaxFreq)
-    {
-        if(frequency >= ADF4360_part[ver].vcoMinFreq)
-        {
-            vcoFrequency = frequency;
-        }
-        else
-        {
-            vcoFrequency = ADF4360_part[ver].vcoMinFreq;
-        }
+    uint64_t actual = 0ULL;
+
+    if (ADF4360_SetFrequencyConfig(&g_adf4360_default, frequency, &actual) != HAL_OK) {
+        return 0ULL;
     }
-    else
-    {
-        vcoFrequency = ADF4360_part[ver].vcoMaxFreq;
-    }
-    /* If ADF4360-8 or ADF4360-9 are used. */
-    if(ver > ADF4360_7)
-    {
-        /* Dual-modulus prescaler does not exist. */
-        prescaleVal = 1;
-        /* A counter does not exist or has a different purpose. */
-        a = 0;
-        /* Get the actual PFD frequency. */
-        rCounterValue = ADF4360_TuneRcounter(rCounterValue);
-        frequencyPfd = ADF4360_st.refIn / rCounterValue;
-        /* Find Counter B value using VCO frequency and PFD frequency. */
-        b = (unsigned short)((float)vcoFrequency / frequencyPfd + 0.5f);
-    }
-    else // If ADF4360-0, ADF4360-1, ... , ADF4360-7 are used. 
-    {
-        /* Adjust the dual-modulus prescaler value so that counters A and B will 
-        be supplied by a clock that has a frequency below "countersMaxFreq". */
-        while(((vcoFrequency / prescaleVal) > 
-              ADF4360_part[ver].countersMaxFreq) && 
-              (prescaleVal < ADF4360_part[ver].maxPrescalerVal))
-        {
-            prescaleVal *= 2;
-        }
-        do
-        {
-            /* Get the actual PFD frequency. */
-            rCounterValue = ADF4360_TuneRcounter(rCounterValue);
-            frequencyPfd = ADF4360_st.refIn / rCounterValue;
-            /* Find the values for Counter A and Counter B using VCO frequency 
-            and PFD frequency. */
-            freqRatio = (unsigned short)((float)vcoFrequency / frequencyPfd 
-                        + 0.5f);
-            b = freqRatio / prescaleVal;
-            a = freqRatio % prescaleVal;
-        }while((a > b) && (b < 3)); // B must be greater or equal to A
-    }
-    /* Find the actual VCO frequency. */
-    calculatedFrequency = ((b * prescaleVal) + a) * frequencyPfd;
-    /* Select the value of the bits for the Band Select Clock Divider. */
-    band = ADF4360_GetBandDivider(frequencyPfd);
-    /* Relationshio between band value and band bits. */
-    bandBits = (unsigned char)(((band - 1) * 0.42) + 0.8);
-    /* Load the saved values into ADF4118 registers using Counter Reset
-    Method. */
-    ADF4360_Write(ADF4360_REG_R_COUNTER |          // Select R Counter Register
-                  regR |                           // Write the fixed settings
-                  ADF4360_R_CNT_BAND_CLK(bandBits) |
-                  ADF4360_R_CNT_REF_COUNTER(rCounterValue));
-    ADF4360_Write(ADF4360_REG_CONTROL |             // Select Control Register
-                  regCtrl |                         // Write the fixed settings
-                  ADF4360_CTRL_PRESCALE(prescaleVal / 16));
-    /* Recommended Interval Between Control Latch and N Counter Latch writes. */
-    TIME_DelayMs(10);
-    ADF4360_Write(ADF4360_REG_N_COUNTER |           // Select N Counter Register
-                  regN |                            // Write the fixed settings
-                  ADF4360_N_CNT_B_COUNTER(b) | 
-                  ADF4360_N_CNT_A_COUNTER(a));
-    
-    return calculatedFrequency;
+
+    return (unsigned long long)actual;
+}
+
+GPIO_PinState ADF4360_DefaultLockDetect(void)
+{
+    return ADF4360_ReadLockDetect(&g_adf4360_default);
 }
