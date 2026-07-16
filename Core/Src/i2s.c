@@ -22,10 +22,11 @@
 
 /* USER CODE BEGIN 0 */
 
+DMA_HandleTypeDef hdma_spi1_tx;
+
 /* USER CODE END 0 */
 
 I2S_HandleTypeDef hi2s1;
-DMA_HandleTypeDef hdma_spi1_tx;
 
 /* I2S1 init function */
 void MX_I2S1_Init(void)
@@ -81,7 +82,6 @@ void HAL_I2S_MspInit(I2S_HandleTypeDef* i2sHandle)
 
     /* I2S1 clock enable */
     __HAL_RCC_SPI1_CLK_ENABLE();
-    __HAL_RCC_DMA1_CLK_ENABLE();
 
     __HAL_RCC_GPIOC_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
@@ -122,7 +122,10 @@ void HAL_I2S_MspInit(I2S_HandleTypeDef* i2sHandle)
     GPIO_InitStruct.Alternate = GPIO_AF5_SPI1;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-    /* I2S1 DMA Init */
+  /* USER CODE BEGIN SPI1_MspInit 1 */
+
+    __HAL_RCC_DMA1_CLK_ENABLE();
+
     hdma_spi1_tx.Instance = DMA1_Stream0;
     hdma_spi1_tx.Init.Request = DMA_REQUEST_SPI1_TX;
     hdma_spi1_tx.Init.Direction = DMA_MEMORY_TO_PERIPH;
@@ -133,18 +136,18 @@ void HAL_I2S_MspInit(I2S_HandleTypeDef* i2sHandle)
     hdma_spi1_tx.Init.Mode = DMA_CIRCULAR;
     hdma_spi1_tx.Init.Priority = DMA_PRIORITY_HIGH;
     hdma_spi1_tx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+    hdma_spi1_tx.Init.FIFOThreshold = DMA_FIFO_THRESHOLD_FULL;
+    hdma_spi1_tx.Init.MemBurst = DMA_MBURST_SINGLE;
+    hdma_spi1_tx.Init.PeriphBurst = DMA_PBURST_SINGLE;
     if (HAL_DMA_Init(&hdma_spi1_tx) != HAL_OK)
     {
       Error_Handler();
     }
 
-    __HAL_LINKDMA(i2sHandle,hdmatx,hdma_spi1_tx);
+    __HAL_LINKDMA(i2sHandle, hdmatx, hdma_spi1_tx);
 
-    /* DMA interrupt init */
-    HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 5, 0);
+    HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 6, 0);
     HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
-
-  /* USER CODE BEGIN SPI1_MspInit 1 */
 
   /* USER CODE END SPI1_MspInit 1 */
   }
@@ -176,13 +179,10 @@ void HAL_I2S_MspDeInit(I2S_HandleTypeDef* i2sHandle)
 
     HAL_GPIO_DeInit(GPIOB, GPIO_PIN_3|GPIO_PIN_4);
 
-    /* I2S1 DMA DeInit */
-    HAL_DMA_DeInit(i2sHandle->hdmatx);
-
-    /* DMA interrupt deinit */
-    HAL_NVIC_DisableIRQ(DMA1_Stream0_IRQn);
-
   /* USER CODE BEGIN SPI1_MspDeInit 1 */
+
+    HAL_DMA_DeInit(i2sHandle->hdmatx);
+    HAL_NVIC_DisableIRQ(DMA1_Stream0_IRQn);
 
   /* USER CODE END SPI1_MspDeInit 1 */
   }

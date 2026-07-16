@@ -67,6 +67,7 @@ static AIC3104_Config_t g_aic3104_cfg;
 static ADF7021_Config_t g_adf7021_cfg;
 static LTC5599_Config_t g_ltc5599_cfg;
 static float g_iq_audio_buffer[AUDIO_FRAME_SAMPLES * 2U];
+__attribute__((section(".dma_buffer"), aligned(32)))
 static int16_t g_i2s_tx_stereo[AUDIO_FRAME_SAMPLES * 2U];
 
 /* USER CODE END Variables */
