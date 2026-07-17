@@ -278,7 +278,7 @@ static void RunRfSmokeTest(void)
   uint64_t actual_hz = 0ULL;
   uint8_t reg0 = 0U;
 
-  HAL_GPIO_WritePin(TXPLL__CE_GPIO_Port, TXPLL__CE_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(TXPLL_CE_GPIO_Port, TXPLL_CE_Pin, GPIO_PIN_SET);
 
   if (ADF4360_Init(ADF4360_7)) {
     actual_hz = ADF4360_SetFrequency(436500000ULL);
@@ -289,7 +289,7 @@ static void RunRfSmokeTest(void)
     UartPrintf("ADF4360-7 init fail\r\n");
   }
 
-  LTC5599_DefaultConfig(&g_ltc5599_cfg, &hspi4);
+  LTC5599_DefaultConfig(&g_ltc5599_cfg, &hspi3);
   g_ltc5599_cfg.cs_port = LTC5599_CS_GPIO_Port;
   g_ltc5599_cfg.cs_pin = LTC5599_CS_Pin;
 

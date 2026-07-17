@@ -147,12 +147,12 @@ void ADF4360_DefaultConfig(ADF4360_Config_t *config, SPI_HandleTypeDef *hspi)
 
     memset(config, 0, sizeof(*config));
     config->hspi = hspi;
-    config->le_port = GPIOA;
-    config->le_pin = GPIO_PIN_4;
-    config->ce_port = TXPLL__CE_GPIO_Port;
-    config->ce_pin = TXPLL__CE_Pin;
-    config->enable_port = TXPLL__ENE13_GPIO_Port;
-    config->enable_pin = TXPLL__ENE13_Pin;
+    config->le_port = TXPLL_LE_GPIO_Port;
+    config->le_pin = TXPLL_LE_Pin;
+    config->ce_port = TXPLL_CE_GPIO_Port;
+    config->ce_pin = TXPLL_CE_Pin;
+    config->enable_port = NULL;
+    config->enable_pin = 0U;
     config->lock_port = TXPLL_LD_GPIO_Port;
     config->lock_pin = TXPLL_LD_Pin;
     config->spi_timeout_ms = ADF4360_TIMEOUT_DEFAULT_MS;

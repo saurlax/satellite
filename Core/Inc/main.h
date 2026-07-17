@@ -57,36 +57,54 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define TXPLL__EN_Pin GPIO_PIN_0
-#define TXPLL__EN_GPIO_Port GPIOC
+#define TXPLL_LE_Pin GPIO_PIN_0
+#define TXPLL_LE_GPIO_Port GPIOC
 #define TXPLL_LD_Pin GPIO_PIN_3
 #define TXPLL_LD_GPIO_Port GPIOC
 #define TEMP_Pin GPIO_PIN_0
 #define TEMP_GPIO_Port GPIOA
-#define TXPLL__CE_Pin GPIO_PIN_1
-#define TXPLL__CE_GPIO_Port GPIOA
-#define TXPLL_LE_Pin GPIO_PIN_4
-#define TXPLL_LE_GPIO_Port GPIOA
+#define TXPLL_CE_Pin GPIO_PIN_1
+#define TXPLL_CE_GPIO_Port GPIOA
+#define LTC5599_EN_Pin GPIO_PIN_2
+#define LTC5599_EN_GPIO_Port GPIOA
+#define LTC5599_TTCK_Pin GPIO_PIN_3
+#define LTC5599_TTCK_GPIO_Port GPIOA
+#define LTC5599_CS_Pin GPIO_PIN_4
+#define LTC5599_CS_GPIO_Port GPIOA
+#define AIC3104_DPWR_Pin GPIO_PIN_6
+#define AIC3104_DPWR_GPIO_Port GPIOA
+#define ADF7021_TESTA_Pin GPIO_PIN_0
+#define ADF7021_TESTA_GPIO_Port GPIOB
 #define FAULT3V3_Pin GPIO_PIN_7
 #define FAULT3V3_GPIO_Port GPIOE
-#define TXPLL__ENE13_Pin GPIO_PIN_13
-#define TXPLL__ENE13_GPIO_Port GPIOE
-#define LTC5599_CS_Pin GPIO_PIN_4
-#define LTC5599_CS_GPIO_Port GPIOE
+#define IO00_Pin GPIO_PIN_9
+#define IO00_GPIO_Port GPIOE
+#define IO01_Pin GPIO_PIN_10
+#define IO01_GPIO_Port GPIOE
+#define IO03_Pin GPIO_PIN_11
+#define IO03_GPIO_Port GPIOE
+#define IO04_Pin GPIO_PIN_12
+#define IO04_GPIO_Port GPIOE
+#define IO06_Pin GPIO_PIN_13
+#define IO06_GPIO_Port GPIOE
 #define AIC3104_RST_Pin GPIO_PIN_13
 #define AIC3104_RST_GPIO_Port GPIOD
+#define TCAN_SHDN2_Pin GPIO_PIN_15
+#define TCAN_SHDN2_GPIO_Port GPIOD
 #define PA_EN_Pin GPIO_PIN_7
 #define PA_EN_GPIO_Port GPIOC
-#define ADF7021_SWD_Pin GPIO_PIN_0
+#define TCAN_SHDN1_Pin GPIO_PIN_9
+#define TCAN_SHDN1_GPIO_Port GPIOC
+#define KHM_POW_ON_Pin GPIO_PIN_0
+#define KHM_POW_ON_GPIO_Port GPIOD
+#define ADF7021_MUXOUT_Pin GPIO_PIN_1
+#define ADF7021_MUXOUT_GPIO_Port GPIOD
+#define WDI_Pin GPIO_PIN_2
+#define WDI_GPIO_Port GPIOD
+#define ADF7021_SWD_Pin GPIO_PIN_3
 #define ADF7021_SWD_GPIO_Port GPIOD
-#define ADF7021_EN_Pin GPIO_PIN_1
+#define ADF7021_EN_Pin GPIO_PIN_4
 #define ADF7021_EN_GPIO_Port GPIOD
-#define GPIO4_Pin GPIO_PIN_3
-#define GPIO4_GPIO_Port GPIOD
-#define GPIO5_Pin GPIO_PIN_4
-#define GPIO5_GPIO_Port GPIOD
-#define WDI_Pin GPIO_PIN_5
-#define WDI_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

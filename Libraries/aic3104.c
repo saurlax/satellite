@@ -1,4 +1,5 @@
 #include "aic3104.h"
+#include "main.h"
 #include <string.h>
 
 #define AIC3104_TIMEOUT_DEFAULT_MS 100U
@@ -134,6 +135,8 @@ void AIC3104_DefaultConfig(AIC3104_Config_t *config, I2C_HandleTypeDef *hi2c)
 
     memset(config, 0, sizeof(*config));
     config->hi2c = hi2c;
+    config->reset_port = AIC3104_RST_GPIO_Port;
+    config->reset_pin = AIC3104_RST_Pin;
     config->i2c_addr_7bit = AIC3104_I2C_ADDR_0;
     config->i2c_timeout_ms = AIC3104_TIMEOUT_DEFAULT_MS;
 

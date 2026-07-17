@@ -45,16 +45,17 @@
 /* Include Files                                                              */
 /******************************************************************************/
 #include "Communication.h"
+#include "main.h"
 
 extern SPI_HandleTypeDef hspi3;
 
 void SPI3_CS_Select(void)
 {
-	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_13, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(LTC5599_CS_GPIO_Port, LTC5599_CS_Pin, GPIO_PIN_RESET);
 }
 void SPI3_CS_Deselect(void)
 {
-	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_13, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(LTC5599_CS_GPIO_Port, LTC5599_CS_Pin, GPIO_PIN_SET);
 }
 /***************************************************************************//**
  * @brief Initializes the I2C communication peripheral.

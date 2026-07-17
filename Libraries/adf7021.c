@@ -1,5 +1,6 @@
 #include "adf7021.h"
 
+#include "main.h"
 #include <math.h>
 #include <string.h>
 
@@ -543,6 +544,8 @@ void ADF7021_DefaultConfig(ADF7021_Config_t *config, SPI_HandleTypeDef *hspi)
     memset(config, 0, sizeof(*config));
 
     config->hspi = hspi;
+    config->ce_port = ADF7021_EN_GPIO_Port;
+    config->ce_pin = ADF7021_EN_Pin;
     config->spi_timeout_ms = ADF7021_SPI_TIMEOUT_DEFAULT_MS;
 
     config->xtal_hz = 12288000UL;

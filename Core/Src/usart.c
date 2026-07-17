@@ -69,6 +69,11 @@ void MX_USART1_UART_Init(void)
   }
   /* USER CODE BEGIN USART1_Init 2 */
 
+  /* The schematic labels PA10 as TX and PA9 as RX; enable the UART pin swap. */
+  __HAL_UART_DISABLE(&huart1);
+  MODIFY_REG(huart1.Instance->CR2, USART_CR2_SWAP, USART_CR2_SWAP);
+  __HAL_UART_ENABLE(&huart1);
+
   /* USER CODE END USART1_Init 2 */
 
 }

@@ -19,8 +19,8 @@ void LTC5599_DefaultConfig(LTC5599_Config_t *config, SPI_HandleTypeDef *hspi)
 
     memset(config, 0, sizeof(*config));
     config->hspi = hspi;
-    config->cs_port = GPIOE;
-    config->cs_pin = GPIO_PIN_4;
+    config->cs_port = LTC5599_CS_GPIO_Port;
+    config->cs_pin = LTC5599_CS_Pin;
     config->spi_timeout_ms = LTC5599_SPI_TIMEOUT_DEFAULT_MS;
 }
 

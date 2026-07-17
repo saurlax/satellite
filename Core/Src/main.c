@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "adc.h"
 #include "dac.h"
 #include "fdcan.h"
 #include "i2c.h"
@@ -125,6 +126,8 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   MX_RAMECC_Init();
+  MX_ADC1_Init();
+  MX_FDCAN2_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
